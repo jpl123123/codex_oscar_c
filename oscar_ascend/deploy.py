@@ -17,6 +17,64 @@ from .service_config import target_argv
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# Match common compiler/cmake/ninja error markers so a failed phase prints the
+# actionable lines straight to the console. The target machine may have no
+# outbound access, so stdout is the only channel back to development.
+ERROR_LINE = re.compile(
+    r"error:|error C\d|fatal:|FATAL|CMake Error|ninja: build stopped|"
+    r"undefined reference|undefined symbol|No such file|not found|"
+    r"collect2:|ld returned|make(\[\d+\])?: \*\*\*|ASCEND_HOME_PATH", re.IGNORECASE)
+# Compiler command lines can exceed a thousand characters; cap what is echoed
+# so a pasted report stays readable.
+LINE_LIMIT = 600
+
+
+def _clip(line: str) -> str:
+    return line if len(line) <= LINE_LIMIT else line[:LINE_LIMIT] + " ...<clipped>"
+
+
+def print_failure_details(logdir: Path, phase_name: str, *,
+                          max_error_lines: int = 220, tail_lines: int = 60) -> None:
+    log = logdir / (phase_name + ".log")
+    if not log.is_file():
+        return
+    try:
+        lines = log.read_text(errors="replace").splitlines()
+    except OSError as exc:
+        print(f"[oscar-ascendc] could not read {log}: {exc}", flush=True)
+        return
+    print(f"\n[oscar-ascendc] ===== {phase_name}.log: {len(lines)} lines =====", flush=True)
+    marked = [i for i, line in enumerate(lines) if ERROR_LINE.search(line)]
+    if marked:
+        spans, start, end = [], None, None
+        for i in marked:
+            lo, hi = max(0, i - 3), min(len(lines), i + 3)
+            if start is None:
+                start, end = lo, hi
+            elif lo <= end + 2:
+                end = max(end, hi)
+            else:
+                spans.append((start, end))
+                start, end = lo, hi
+        if start is not None:
+            spans.append((start, end))
+        shown = 0
+        print("[oscar-ascendc] ----- error context -----", flush=True)
+        for lo, hi in spans:
+            if shown >= max_error_lines:
+                print(f"[oscar-ascendc] ... {len(spans)} error regions total; "
+                      f"showing first {max_error_lines} lines", flush=True)
+                break
+            for i in range(lo, hi):
+                if shown >= max_error_lines:
+                    break
+                print(f"{i + 1:6d}| {_clip(lines[i])}", flush=True)
+                shown += 1
+    print(f"[oscar-ascendc] ----- last {tail_lines} lines -----", flush=True)
+    for i, line in enumerate(lines[-tail_lines:], start=max(1, len(lines) - tail_lines + 1)):
+        print(f"{i:6d}| {_clip(line)}", flush=True)
+    print(f"[oscar-ascendc] ===== end {phase_name}.log =====\n", flush=True)
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -155,6 +213,9 @@ def main() -> int:
     except (Exception, KeyboardInterrupt) as exc:
         status.update(status="failed", error=str(exc) or type(exc).__name__)
         print(f"[oscar-ascendc] FAILED phase={status['phase']}: {exc}\nFull logs: {logdir}", file=sys.stderr)
+        # Operators may work on a machine with no outbound access; print the
+        # failing phase's error context directly so it can be pasted back.
+        print_failure_details(logdir, status["phase"])
         return 1
     finally:
         report_path.write_text(json.dumps(status, indent=2) + "\n")

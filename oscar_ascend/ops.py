@@ -98,7 +98,9 @@ class LayerWindowState:
         return cls(
             torch.full((max_requests, capacity), -1, dtype=torch.int32, device=device),
             torch.zeros((max_requests, 4), dtype=torch.int64, device=device),
-            torch.zeros(1, dtype=torch.int32, device=device),
+            # Per-request-row count of tokens restored lossily from INT2 after
+            # staging eviction; one device writer per row, read only by probes.
+            torch.zeros(max_requests, dtype=torch.int32, device=device),
         )
 
 

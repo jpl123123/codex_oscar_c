@@ -116,7 +116,9 @@ extern "C" __global__ __aicore__ void oscar_stage_kernel(
 
 // Rebuild the window ring for prefix-hit rows: positions of Sink [0,min(S,C))
 // and Recent [max(S,C-R),C) are restored from staging when the owner tag still
-// matches, otherwise from bounded INT2 dequantization and counted as lossy.
+// matches, otherwise from bounded INT2 dequantization. Lossy tokens are
+// counted per window row (single writer per row); they are never reported as
+// lossless.
 extern "C" __global__ __aicore__ void oscar_restore_kernel(
  GM_ADDR seq,GM_ADDR qsl,GM_ADDR rowmap,GM_ADDR epochs,GM_ADDR bt,GM_ADDR pos,
  GM_ADDR wk,GM_ADDR wv,GM_ADDR state,GM_ADDR sk,GM_ADDR sv,GM_ADDR owner,
@@ -149,8 +151,7 @@ extern "C" __global__ __aicore__ void oscar_restore_kernel(
     cg.SetGlobalBuffer(reinterpret_cast<__gm__ uint8_t*>(cache));
     kr.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(rk));
     vr.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(rv));
-    lz.SetGlobalBuffer(reinterpret_cast<__gm__ int32_t*>(lossy));
-    int cap=sink+recent+mp,bytes=d/4,region=bytes+4,slot_bytes=2*region;
+    lz.SetGlobalBuffer(reinterpret_cast<__gm__ int32_t*>(lossy));    int cap=sink+recent+mp,bytes=d/4,region=bytes+4,slot_bytes=2*region;
     for(int req=GetBlockIdx();req<batch;req+=GetBlockNum()) {
         int row=rg.GetValue(req);
         int qlen=qsg.GetValue(req+1)-qsg.GetValue(req);
@@ -199,7 +200,9 @@ extern "C" __global__ __aicore__ void oscar_restore_kernel(
                         Save((side==0?wkg:wvg)[(int64_t(row)*cap+index)*hk*d+h*d],bf,d);
                     }
                 }
-                lz.AtomicAdd(0,1);
+                // Per-row lossy token count. Exactly one block owns one window
+                // row here, so plain read-modify-write needs no atomics.
+                lz.SetValue(row, lz.GetValue(row) + 1);
             }
             posg.SetValue(row*cap+index,p);
         }

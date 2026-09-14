@@ -143,7 +143,7 @@ void Restore(const Tensor& seq,const Tensor& qsl,const Tensor& map,const Tensor&
     TORCH_CHECK(wk.sizes()==wv.sizes()&&pos.size(0)==w&&pos.size(1)==cap&&state.size(0)==w&&state.size(1)==4,"window geometry mismatch");
     Check(sk,at::kBFloat16,4,"staging_k");Check(sv,at::kBFloat16,4,"staging_v");Check(owner,at::kLong,2,"staging_owner");
     TORCH_CHECK(sk.sizes()==sv.sizes()&&sk.size(2)==hk&&sk.size(3)==d&&owner.size(0)==sk.size(0)&&owner.size(1)==sk.size(1),"staging pool geometry mismatch");
-    Cache(h,d,hk);Rotation(rk,d);Rotation(rv,d);Check(lossy,at::kInt,1,"lossy_counter");
+    Cache(h,d,hk);Rotation(rk,d);Rotation(rv,d);Vec(lossy,at::kInt,w,"lossy_rows");
     int batch=seq.numel();Check(seq,at::kInt,1,"seq_lens");Vec(qsl,at::kInt,batch+1,"qsl");Vec(map,at::kInt,batch,"row_to_window");
     Vec(epochs,at::kLong,batch,"epochs");Check(bt,at::kInt,2,"block_table");TORCH_CHECK(bt.size(0)==batch,"blocktable batch mismatch");
     TORCH_CHECK((sink>=0&&recent>=0&&mp>0&&mp<=16&&cap==sink+recent+mp&&tablebs>0),"invalid restore configuration");
@@ -194,7 +194,7 @@ TORCH_LIBRARY(oscar_ascend,m) {
     m.def("zero_blocks_out(Tensor(a!) history, Tensor block_ids) -> ()");
     m.def("dequant_history_out(Tensor history, Tensor slots, Tensor rk, Tensor rv, Tensor(a!) key, Tensor(b!) value) -> ()");
     m.def("stage_window_out(Tensor key, Tensor value, Tensor seq_lens, Tensor qsl, Tensor slots, Tensor(a!) staging_k, Tensor(b!) staging_v, Tensor(c!) owner, int sink, int recent) -> ()");
-    m.def("prefix_restore_out(Tensor seq_lens, Tensor qsl, Tensor row_to_window, Tensor epochs, Tensor block_table, Tensor(a!) window_positions, Tensor(b!) window_k, Tensor(c!) window_v, Tensor(d!) state, Tensor staging_k, Tensor staging_v, Tensor owner, Tensor history, Tensor rk, Tensor rv, Tensor(e!) lossy_counter, int sink, int recent, int max_pending, int block_table_block_size) -> ()");
+    m.def("prefix_restore_out(Tensor seq_lens, Tensor qsl, Tensor row_to_window, Tensor epochs, Tensor block_table, Tensor(a!) window_positions, Tensor(b!) window_k, Tensor(c!) window_v, Tensor(d!) state, Tensor staging_k, Tensor staging_v, Tensor owner, Tensor history, Tensor rk, Tensor rv, Tensor(e!) lossy_rows, int sink, int recent, int max_pending, int block_table_block_size) -> ()");
     m.def("window_state_out(Tensor key, Tensor value, Tensor seq_lens, Tensor qsl, Tensor row_to_window, Tensor epochs, Tensor block_table, Tensor native_slots, Tensor is_prefill, Tensor(a!) window_k, Tensor(b!) window_v, Tensor(c!) window_positions, Tensor(d!) state, Tensor(e!) history_start, Tensor(f!) history_end, Tensor(g!) query_positions, Tensor(h!) migration_k, Tensor(i!) migration_v, Tensor(j!) migration_slots, Tensor(k!) current_slots, int phase, int sink, int recent, int max_pending, int block_size) -> ()");
 }
 TORCH_LIBRARY_IMPL(oscar_ascend,PrivateUse1,m) {

@@ -190,7 +190,7 @@ def run_prefix_probes(ns, torch, device):
         sink, recent, 4, bs)
     torch.npu.synchronize()
     assert state[0].tolist() == [5, committed, 0, 0], f"restored state {state.tolist()}"
-    assert int(lossy.item()) == 0, f"staged restore must be exact, lossy={lossy.item()}"
+    assert int(lossy.sum().item()) == 0, f"staged restore must be exact, lossy={lossy.sum().item()}"
     torch.testing.assert_close(window_k[0, 0:sink], k[0:sink], atol=0, rtol=0)
     torch.testing.assert_close(window_k[0, sink:sink + recent], k[committed - recent:committed],
                                atol=0, rtol=0)
@@ -206,7 +206,7 @@ def run_prefix_probes(ns, torch, device):
         staging_k, staging_v, owner, cache, identity, identity, lossy,
         sink, recent, 4, bs)
     torch.npu.synchronize()
-    assert int(lossy.item()) == sink + recent, "evicted staging must count lossy rows"
+    assert int(lossy.sum().item()) == sink + recent, "evicted staging must count lossy tokens"
     assert state[0, 3].item() == 0 and state[0, 1].item() == committed
     checks.append({"name": "stage_and_prefix_restore", "head_dim": dim,
                    "status": "passed", "lossy_rows_on_eviction": sink + recent})

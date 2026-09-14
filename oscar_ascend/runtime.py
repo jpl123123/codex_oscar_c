@@ -114,8 +114,8 @@ def reserve_bytes(config: Any, groups: Any, options: Any) -> int:
         total += (w + 1) * 4 + w * 4 + w * pages * 4 + n * 8 + w * (4 + 8 + 1) + 8
         for _ in group.layer_names:
             total += w * capacity * 4 + w * 4 * 8
-            # Lossy prefix-restore counter and one row of the error mirror.
-            total += 4 + w * 8
+            # Per-row lossy restore counters and the error-observation matrix.
+            total += w * 4 + w * 8
             total += 2 * spec.head_size * spec.head_size * 4
     # Allow actual tensor allocator alignment for every planned allocation.
     allocations = 4 + len(budgets) * 13 + len(_full_groups(groups)) * 8
