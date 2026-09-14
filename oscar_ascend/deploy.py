@@ -85,8 +85,9 @@ def print_failure_details(logdir: Path, phase_name: str, *,
     print(f"[oscar-ascendc] ===== end {phase_name}.log =====\n", flush=True)
     print_artifact_diagnostics(lines)
     build_root = logdir.parent.parent / "build/ascendc"
-    print_rule_context(lines, build_root)
+    rules = print_rule_context(lines, build_root)
     print_recent_aux_logs(build_root, logdir)
+    rerun_failed_recipe(rules)
 
 
 def print_artifact_diagnostics(lines: list[str]) -> None:
@@ -113,17 +114,19 @@ def print_artifact_diagnostics(lines: list[str]) -> None:
                 print(f"  $ {' '.join(tool)} -> {output}", flush=True)
 
 
-def print_rule_context(lines: list[str], build_root: Path) -> None:
-    """Print the make recipes referenced by failing build.make:NN markers.
+def print_rule_context(lines: list[str], build_root: Path) -> dict[str, set[int]]:
+    """Print and return the make recipes referenced by build.make:NN markers.
 
     Some framework custom commands redirect their own output; the rule text
-    is then the only evidence of what actually ran.
+    is then the only evidence of what actually ran. The resolved rule paths
+    and line numbers are returned for follow-up diagnostics.
     """
     references: dict[str, set[int]] = {}
     for line in lines:
         for match in re.finditer(r"([\w./+-]*build\.make):(\d+)", line):
             references.setdefault(match.group(1), set()).add(int(match.group(2)))
     shown_rules = 0
+    resolved: dict[str, Path] = {}
     for name, linenos in sorted(references.items()):
         if shown_rules >= 3:
             break
@@ -145,6 +148,8 @@ def print_rule_context(lines: list[str], build_root: Path) -> None:
             print(f"[oscar-ascendc] ----- {rule}:{lineno} (recipe context) -----", flush=True)
             for i in range(lo, hi):
                 print(f"{i + 1:6d}| {_clip(rule_lines[i])}", flush=True)
+        resolved[name] = rule
+    return resolved
 
 
 def pathlib_name(path: str) -> str:
@@ -173,6 +178,43 @@ def print_recent_aux_logs(build_root: Path, phase_logdir: Path) -> None:
         print(f"[oscar-ascendc] ----- aux log {path} (last 40 lines) -----", flush=True)
         for i, line in enumerate(tail, start=max(1, len(tail) - 39)):
             print(f"{i:6d}| {_clip(line)}", flush=True)
+
+
+def rerun_failed_recipe(rules: dict[str, Path]) -> None:
+    """Re-run a failed merge recipe verbatim and print its hidden output.
+
+    merge_mix_obj.sh swallows its own diagnostics; executing the exact recipe
+    line once more from the same directory exposes the real error. Only
+    framework merge commands under the Ascend install are re-run; they write
+    exclusively into the task's build directory.
+    """
+    for path in rules.values():
+        try:
+            rule_lines = path.read_text(errors="replace").splitlines()
+        except OSError:
+            continue
+        for lineno in range(len(rule_lines)):
+            if lineno - 1 >= len(rule_lines):
+                continue
+            recipe = rule_lines[lineno - 1].lstrip("\t ").rstrip("\r")
+            if "merge_mix_obj.sh" not in recipe:
+                continue
+            working = recipe.split("&&", 1)[0].strip()
+            directory = working[len("cd "):].strip() if working.startswith("cd ") else None
+            command = recipe.split("&&", 1)[1].strip() if "&&" in recipe else recipe
+            print(f"[oscar-ascendc] re-running failed recipe in {directory}:", flush=True)
+            print(f"  $ {_clip(command)}", flush=True)
+            try:
+                result = subprocess.run(["bash", "-c", command], cwd=directory, text=True,
+                                        capture_output=True, timeout=300)
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                print(f"  re-run failed: {exc}", flush=True)
+                return
+            output = (result.stdout + "\n" + result.stderr).splitlines()
+            for line in output[-60:]:
+                print(f"  | {_clip(line)}", flush=True)
+            print(f"  exit code: {result.returncode}", flush=True)
+            return
 
 
 def main() -> int:
@@ -247,6 +289,7 @@ def main() -> int:
         shutil.rmtree(build, ignore_errors=True)
         phase("configure", ["cmake", "-S", str(ROOT / "csrc"), "-B", str(build),
                             f"-DASCEND_HOME_PATH={args.cann}", f"-DSOC_VERSION={args.soc_version}",
+                            "-DCMAKE_BUILD_TYPE=Release",
                             f"-DPython3_EXECUTABLE={sys.executable}"], 180)
         phase("build", ["cmake", "--build", str(build), "--parallel", "4"], 2400)
         library = build / "liboscar_ascend_ops.so"
