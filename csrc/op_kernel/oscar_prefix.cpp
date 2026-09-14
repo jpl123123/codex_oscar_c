@@ -38,7 +38,7 @@ extern "C" __global__ __aicore__ void oscar_dequant_kernel(
     TPipe pipe; TBuf<TPosition::VECCALC> fb,bb,packb,halfb;
     pipe.InitBuffer(fb,4*kMaxDim*sizeof(float));
     pipe.InitBuffer(bb,kMaxDim*sizeof(bfloat16_t));
-    pipe.InitBuffer(packb,Align(2*(kMaxDim/4+4)));
+    pipe.InitBuffer(packb,AlignBuffer(2*(kMaxDim/4+4)));
     pipe.InitBuffer(halfb,32);
     auto f=fb.Get<float>(); auto bf=bb.Get<bfloat16_t>();
     auto packed=packb.Get<uint8_t>(); auto halfs=halfb.Get<half>();
@@ -129,7 +129,7 @@ extern "C" __global__ __aicore__ void oscar_restore_kernel(
     TPipe pipe; TBuf<TPosition::VECCALC> fb,bb,packb,halfb;
     pipe.InitBuffer(fb,4*kMaxDim*sizeof(float));
     pipe.InitBuffer(bb,kMaxDim*sizeof(bfloat16_t));
-    pipe.InitBuffer(packb,Align(2*(kMaxDim/4+4)));
+    pipe.InitBuffer(packb,AlignBuffer(2*(kMaxDim/4+4)));
     pipe.InitBuffer(halfb,32);
     auto f=fb.Get<float>(); auto bf=bb.Get<bfloat16_t>();
     auto packed=packb.Get<uint8_t>(); auto halfs=halfb.Get<half>();

@@ -5,10 +5,10 @@
 using namespace AscendC;
 using namespace oscar;
 using namespace matmul;
-using AT=matmul::MatmulType<TPosition::GM,CubeFormat::ND,bfloat16_t>;
-using BT=matmul::MatmulType<TPosition::GM,CubeFormat::ND,bfloat16_t,true>;
-using BNT=matmul::MatmulType<TPosition::GM,CubeFormat::ND,bfloat16_t>;
-using CT=matmul::MatmulType<TPosition::GM,CubeFormat::ND,float>;
+using OscarMatA=matmul::MatmulType<TPosition::GM,CubeFormat::ND,bfloat16_t>;
+using OscarMatBT=matmul::MatmulType<TPosition::GM,CubeFormat::ND,bfloat16_t,true>;
+using OscarMatB=matmul::MatmulType<TPosition::GM,CubeFormat::ND,bfloat16_t>;
+using OscarMatC=matmul::MatmulType<TPosition::GM,CubeFormat::ND,float>;
 
 // The only INT2 read site is LoadKvHalf. Each AIV owns 16 distinct token rows,
 // together filling a 32-token bridge for one Cube. All 16 query rows consume
@@ -221,7 +221,7 @@ private:
         PipeBarrier<PIPE_ALL>();
     }
     HistoryPlan p; TPipe* pipe_; int core=0,sub=0;
-    matmul::MatmulImpl<AT,BT,CT> mmqk; matmul::MatmulImpl<AT,BNT,CT> mmpv;
+    matmul::MatmulImpl<OscarMatA,OscarMatBT,OscarMatC> mmqk; matmul::MatmulImpl<OscarMatA,OscarMatB,OscarMatC> mmpv;
     GlobalTensor<bfloat16_t> qg,tq,tk,tv,prob; GlobalTensor<uint8_t> cg;
     GlobalTensor<bfloat16_t> rawk,rawv,wink,winv;
     GlobalTensor<int32_t> winpos,winmap;

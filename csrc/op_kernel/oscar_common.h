@@ -5,6 +5,10 @@
 namespace oscar {
 using namespace AscendC;
 constexpr float kNegInf = -__builtin_inff();
+// Device-side 32-byte alignment for TPipe::InitBuffer sizes. The host-side
+// oscar::Align (512, used by tiling/workspace math) carries no __aicore__
+// attribute and cannot be called from kernel code.
+__aicore__ inline uint32_t AlignBuffer(uint32_t v) { return (v + 31u) / 32u * 32u; }
 template<class T> __aicore__ inline T Min(T a, T b) { return a < b ? a : b; }
 template<class T> __aicore__ inline T Max(T a, T b) { return a > b ? a : b; }
 template<class T> __aicore__ inline void Load(LocalTensor<T> dst, GlobalTensor<T> src, int n) {
