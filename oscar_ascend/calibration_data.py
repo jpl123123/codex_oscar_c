@@ -74,7 +74,13 @@ def ensure_corpus(profile: dict, cache_directory: Path) -> bytes:
     if path.is_file():
         raw = path.read_bytes()
     elif profile.get("dataset_path"):
-        raw = Path(profile["dataset_path"]).read_bytes()
+        source = Path(profile["dataset_path"])
+        if not source.is_file() and not source.is_absolute():
+            # Air-gapped machines receive the vendored corpus through the
+            # repository; resolve the configured relative path against the
+            # project root so the working directory does not matter.
+            source = Path(__file__).resolve().parents[1] / profile["dataset_path"]
+        raw = source.read_bytes()
     else:
         context = ssl.create_default_context(cafile="/etc/ssl/cert.pem" if Path("/etc/ssl/cert.pem").is_file() else None)
         with urllib.request.urlopen(profile["dataset_url"], context=context, timeout=60) as response:
