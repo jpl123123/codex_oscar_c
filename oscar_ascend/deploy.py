@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 
@@ -80,6 +81,31 @@ def print_failure_details(logdir: Path, phase_name: str, *,
     for i, line in enumerate(lines[-tail_lines:], start=max(1, len(lines) - tail_lines + 1)):
         print(f"{i:6d}| {_clip(line)}", flush=True)
     print(f"[oscar-ascendc] ===== end {phase_name}.log =====\n", flush=True)
+    print_artifact_diagnostics(lines)
+
+
+def print_artifact_diagnostics(lines: list[str]) -> None:
+    """Identify object files the linker rejected as 'unknown file type'.
+
+    Runs the host `file`/`ls` tools on the exact paths ld.lld rejected and
+    prints the result, so a pasted report shows whether the artifact is empty,
+    text, or a stale directory without another round trip.
+    """
+    paths = []
+    for line in lines:
+        if "unknown file type" not in line:
+            continue
+        for match in re.finditer(r"error:\s*([^\s:]+(?:/[^\s:]+)*)", line):
+            candidate = match.group(1)
+            if candidate not in paths:
+                paths.append(candidate)
+    for path in paths[:8]:
+        print(f"[oscar-ascendc] artifact check: {path}", flush=True)
+        for tool in (("file",), ("ls", "-la")):
+            result = subprocess.run(list(tool) + [path], text=True, capture_output=True, timeout=15)
+            output = (result.stdout or result.stderr).strip()
+            if output:
+                print(f"  $ {' '.join(tool)} -> {output}", flush=True)
 
 
 def main() -> int:
@@ -147,10 +173,15 @@ def main() -> int:
                 raise RuntimeError("cannot determine a unique supported SoC from npu-smi; set OSCAR_SOC_VERSION/--soc-version")
         phase("install", [sys.executable, "-m", "pip", "install", "--no-build-isolation", "-e", str(ROOT)], 300)
         build = ROOT / "build/ascendc"
+        # The ascendc.cmake flow drives nested ExternalProject build trees whose
+        # stamps and intermediates survive top-level cleans; start from an empty
+        # directory every run so no artifact from an older source revision can
+        # be reused or misread (for example as an ld.lld 'unknown file type').
+        shutil.rmtree(build, ignore_errors=True)
         phase("configure", ["cmake", "-S", str(ROOT / "csrc"), "-B", str(build),
                             f"-DASCEND_HOME_PATH={args.cann}", f"-DSOC_VERSION={args.soc_version}",
                             f"-DPython3_EXECUTABLE={sys.executable}"], 180)
-        phase("build", ["cmake", "--build", str(build), "--parallel", "4", "--clean-first"], 2400)
+        phase("build", ["cmake", "--build", str(build), "--parallel", "4"], 2400)
         library = build / "liboscar_ascend_ops.so"
         if not library.is_file():
             raise RuntimeError(f"expected fresh operator library missing: {library}")
