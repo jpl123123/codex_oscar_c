@@ -37,7 +37,15 @@ public:
         pv.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(base+off));
         partial.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(workspace+p.partial_offset));
         if ASCEND_IS_AIC {
-            mmqk.Init(&p.qk,pipe_); mmpv.Init(&p.pv,pipe_);
+            // HistoryPlan carries the Cube tilings as opaque bytes (the
+            // generated host stub compiles the struct with the plain system
+            // compiler); rebuild them bit-for-bit before MatmulImpl::Init.
+            // Both sides read the same CANN header, so the layout matches.
+            const uint8_t* qb=p.qk_bytes; uint8_t* db=reinterpret_cast<uint8_t*>(&qk_tiling);
+            for(unsigned int i=0;i<sizeof(qk_tiling);++i) db[i]=qb[i];
+            qb=p.pv_bytes; db=reinterpret_cast<uint8_t*>(&pv_tiling);
+            for(unsigned int i=0;i<sizeof(pv_tiling);++i) db[i]=qb[i];
+            mmqk.Init(&qk_tiling,pipe_); mmpv.Init(&pv_tiling,pipe_);
         }
         if ASCEND_IS_AIV {
             pipe_->InitBuffer(packbuf,512); pipe_->InitBuffer(halfbuf,32);
@@ -229,6 +237,7 @@ private:
     }
     HistoryPlan p; TPipe* pipe_; int core=0,sub=0;
     matmul::MatmulImpl<OscarMatA,OscarMatBT,OscarMatC> mmqk; matmul::MatmulImpl<OscarMatA,OscarMatB,OscarMatC> mmpv;
+    AscendC::tiling::TCubeTiling qk_tiling, pv_tiling;
     GlobalTensor<bfloat16_t> qg,tq,tk,tv,prob; GlobalTensor<uint8_t> cg;
     GlobalTensor<bfloat16_t> rawk,rawv,wink,winv;
     GlobalTensor<int32_t> winpos,winmap;

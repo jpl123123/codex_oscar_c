@@ -88,6 +88,7 @@ def print_failure_details(logdir: Path, phase_name: str, *,
     rules = print_rule_context(lines, build_root)
     print_recent_aux_logs(build_root, logdir)
     rerun_failed_recipe(rules)
+    print_generated_source_context(lines, build_root)
 
 
 def print_artifact_diagnostics(lines: list[str]) -> None:
@@ -215,6 +216,34 @@ def rerun_failed_recipe(rules: dict[str, Path]) -> None:
                 print(f"  | {_clip(line)}", flush=True)
             print(f"  exit code: {result.returncode}", flush=True)
             return
+
+
+def print_generated_source_context(lines: list[str], build_root: Path) -> None:
+    """Print head and error context of generated sources under build/ascendc.
+
+    The framework writes generated host stubs into auto_gen; when the plain
+    system compiler rejects one, the file's include block and the cited lines
+    are needed to understand what the generator embedded.
+    """
+    cited: dict[str, set[int]] = {}
+    for line in lines:
+        for match in re.finditer(r"(/[^:\s]+\.(?:cpp|h|hpp)):(\d+)", line):
+            path = match.group(1)
+            if path.startswith(str(build_root)):
+                cited.setdefault(path, set()).add(int(match.group(2)))
+    for path, linenos in sorted(cited.items())[:2]:
+        try:
+            text = Path(path).read_text(errors="replace").splitlines()
+        except OSError:
+            continue
+        print(f"[oscar-ascendc] ----- generated source {path} (first 30 lines) -----", flush=True)
+        for i, line in enumerate(text[:30], start=1):
+            print(f"{i:6d}| {_clip(line)}", flush=True)
+        for lineno in sorted(linenos)[:3]:
+            lo, hi = max(0, lineno - 6), min(len(text), lineno + 6)
+            print(f"[oscar-ascendc] ----- {path}:{lineno} context -----", flush=True)
+            for i in range(lo, hi):
+                print(f"{i + 1:6d}| {_clip(text[i])}", flush=True)
 
 
 def main() -> int:

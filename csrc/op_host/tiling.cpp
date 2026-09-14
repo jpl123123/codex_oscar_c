@@ -3,11 +3,26 @@
 #include <mutex>
 #include <stdexcept>
 #include <tuple>
+#include <type_traits>
 #include "acl/acl_rt.h"
 #include "tiling/tiling_api.h"
 #include "tiling/platform/platform_ascendc.h"
 
 namespace oscar {
+// The generated host stub compiles HistoryPlan with the plain system
+// compiler, so the Cube tilings cross the launch boundary as opaque byte
+// images. Both sides read the same CANN header, hence the same layout.
+static_assert(sizeof(AscendC::tiling::TCubeTiling) <= kTilingBytes,
+              "kTilingBytes must hold one serialized Cube tiling");
+static_assert(std::is_trivially_copyable<AscendC::tiling::TCubeTiling>::value,
+              "Cube tiling must be trivially copyable to serialize as bytes");
+
+template <typename Tiling>
+static void SerializeTiling(uint8_t* destination, const Tiling& source) {
+    const auto* bytes = reinterpret_cast<const uint8_t*>(&source);
+    for (unsigned int i = 0; i < sizeof(source); ++i) destination[i] = bytes[i];
+}
+
 int CoreCount() {
     auto* platform = platform_ascendc::PlatformAscendCManager::GetInstance();
     if (!platform || platform->GetCoreNumAic() < 1) throw std::runtime_error("Cannot discover Ascend Cube cores");
@@ -70,8 +85,8 @@ HistoryPlan MakePlan(int n, int hq, int hk, int d, int b, int pages, int block_s
     p.cache_block_stride=stride; p.scale=scale; p.tile_bytes=TileBytes(d);
     p.partial_offset=p.tile_bytes*p.cores;
     const auto cubes=CachedCubePlans(d);
-    p.qk=cubes.qk;
-    p.pv=cubes.pv;
+    SerializeTiling(p.qk_bytes, cubes.qk);
+    SerializeTiling(p.pv_bytes, cubes.pv);
     return p;
 }
 }

@@ -3,17 +3,21 @@
 #include "kernel_tiling/kernel_tiling.h"
 
 // The AscendC <<<...>>> launch framework re-declares custom kernel parameter
-// types in the global namespace (aclrtlaunch_triple_chevrons_func.h), so this
-// struct must not live inside a namespace. oscar::HistoryPlan below keeps the
-// existing host-side references unchanged.
+// structs in the global namespace AND copies their text verbatim into a host
+// stub compiled by the plain system compiler (auto_gen/.../host_stub.cpp).
+// Kernel parameter structs must therefore stay pure POD with no CANN types:
+// the two Cube tilings travel as opaque byte images, serialized by the host
+// tiling planner and reconstructed bit-for-bit inside the device kernel.
+inline constexpr int kTilingBytes = 512;
+
 struct HistoryPlan {
     int32_t n, hq, hk, d, b, pages, num_blocks, block_size, table_block_size, splits, query_tiles, cores;
     int32_t mode, window_capacity, window_rows;
     int64_t cache_block_stride;
     float scale;
     uint64_t tile_bytes, partial_offset;
-    AscendC::tiling::TCubeTiling qk;
-    AscendC::tiling::TCubeTiling pv;
+    uint8_t qk_bytes[kTilingBytes];
+    uint8_t pv_bytes[kTilingBytes];
 };
 
 namespace oscar {
