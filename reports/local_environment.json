@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-09-14T09:49:16.300244+00:00",
+  "platform": {
+    "system": "Darwin",
+    "machine": "arm64",
+    "release": "25.6.0",
+    "python": "3.12.6 (v3.12.6:a4a2d2b0d85, Sep  6 2024, 16:08:03) [Clang 13.0.0 (clang-1300.0.29.30)]",
+    "executable": "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3"
+  },
+  "packages": {
+    "vllm": {
+      "version": null,
+      "module_path": null
+    },
+    "vllm-ascend": {
+      "version": null,
+      "module_path": null
+    },
+    "torch": {
+      "version": null,
+      "module_path": null
+    },
+    "torch-npu": {
+      "version": null,
+      "module_path": null
+    },
+    "triton": {
+      "version": null,
+      "module_path": null
+    },
+    "packaging": {
+      "version": null,
+      "module_path": null
+    }
+  },
+  "executables": {
+    "npu-smi": null,
+    "cmake": null,
+    "bisheng": null,
+    "ccec": null,
+    "git": "/usr/local/bin/git"
+  },
+  "environment": {
+    "ASCEND_RT_VISIBLE_DEVICES": "4,5,6,7",
+    "ASCEND_HOME_PATH": null,
+    "ASCEND_OPP_PATH": null,
+    "ASCEND_CUSTOM_OPP_PATH": null,
+    "LD_PRELOAD": null,
+    "LD_LIBRARY_PATH": null,
+    "OMP_NUM_THREADS": null,
+    "VLLM_PLUGINS": null,
+    "VLLM_WORKER_MULTIPROC_METHOD": null
+  },
+  "model": {
+    "path": "/softwarePlatform/c00879303/Qwen3.5-27B-w8a8-mtp",
+    "exists": false,
+    "config": null
+  },
+  "native_sources": [
+    {
+      "path": "references/vllm",
+      "status": "git",
+      "head": {
+        "argv": [
+          "git",
+          "-C",
+          "references/vllm",
+          "rev-parse",
+          "HEAD"
+        ],
+        "returncode": 0,
+        "stdout": "0fc695fc6d1d82e9a5ac6835ac8e4e1c83703665\n",
+        "stderr": ""
+      },
+      "tracked_changes": {
+        "argv": [
+          "git",
+          "-C",
+          "references/vllm",
+          "status",
+          "--porcelain",
+          "--untracked-files=no"
+        ],
+        "returncode": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "path": "references/vllm-ascend",
+      "status": "git",
+      "head": {
+        "argv": [
+          "git",
+          "-C",
+          "references/vllm-ascend",
+          "rev-parse",
+          "HEAD"
+        ],
+        "returncode": 0,
+        "stdout": "19e436985102f4ed3aad36c137a6481653688a6c\n",
+        "stderr": ""
+      },
+      "tracked_changes": {
+        "argv": [
+          "git",
+          "-C",
+          "references/vllm-ascend",
+          "status",
+          "--porcelain",
+          "--untracked-files=no"
+        ],
+        "returncode": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    }
+  ],
+  "npu_smi": null,
+  "preflight_missing": [
+    "Ascend execution requires the target Linux environment",
+    "missing vllm",
+    "missing vllm-ascend",
+    "missing torch",
+    "missing torch-npu",
+    "model directory missing",
+    "missing executable npu-smi",
+    "missing executable cmake"
+  ],
+  "npu_kernel_validation": "not_run",
+  "graph_capture": "not_run",
+  "graph_replay": "not_run",
+  "accuracy": "not_run",
+  "performance": "not_run"
+}

@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "oscar-ascendc"
+version = "0.1.0"
+description = "External OSCAR INT2 integration and independent AscendC operators"
+requires-python = ">=3.10"
+dependencies = ["packaging>=23"]
+
+[project.entry-points."vllm.general_plugins"]
+oscar_ascendc = "oscar_ascend.plugin:register"
+
+[tool.setuptools.packages.find]
+include = ["oscar_ascend*"]

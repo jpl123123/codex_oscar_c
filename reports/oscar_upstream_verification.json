@@ -1,0 +1,84 @@
+{
+  "commit": "57286d5d2cb08c3dcd8c17bb59e132d6985e6796",
+  "snapshot_file_count": 11,
+  "status": "matched",
+  "files": [
+    {
+      "path": "tests/quantization/oscar_gpqa_eval.py",
+      "url": "https://raw.githubusercontent.com/vllm-project/vllm/57286d5d2cb08c3dcd8c17bb59e132d6985e6796/tests/quantization/oscar_gpqa_eval.py",
+      "local_sha256": "d06a409263ff810abe204066e6deebbc7b9a6eb1c27465257248a4ca1bf8f45f",
+      "upstream_sha256": "d06a409263ff810abe204066e6deebbc7b9a6eb1c27465257248a4ca1bf8f45f",
+      "matches": true
+    },
+    {
+      "path": "tests/quantization/test_oscar.py",
+      "url": "https://raw.githubusercontent.com/vllm-project/vllm/57286d5d2cb08c3dcd8c17bb59e132d6985e6796/tests/quantization/test_oscar.py",
+      "local_sha256": "602aa153cf082ecda43e596a5e35fc3e584b6172da1203a29cc410ee9f85f24b",
+      "upstream_sha256": "602aa153cf082ecda43e596a5e35fc3e584b6172da1203a29cc410ee9f85f24b",
+      "matches": true
+    },
+    {
+      "path": "tests/quantization/test_oscar_mla.py",
+      "url": "https://raw.githubusercontent.com/vllm-project/vllm/57286d5d2cb08c3dcd8c17bb59e132d6985e6796/tests/quantization/test_oscar_mla.py",
+      "local_sha256": "dc38166bfde3da5457ce8d8e7cb224920583987d37725fe35b10be08b954f249",
+      "upstream_sha256": "dc38166bfde3da5457ce8d8e7cb224920583987d37725fe35b10be08b954f249",
+      "matches": true
+    },
+    {
+      "path": "vllm/model_executor/layers/quantization/oscar/__init__.py",
+      "url": "https://raw.githubusercontent.com/vllm-project/vllm/57286d5d2cb08c3dcd8c17bb59e132d6985e6796/vllm/model_executor/layers/quantization/oscar/__init__.py",
+      "local_sha256": "17908f812c1abdd4e5fc81644125a08eb9fd82da7aa831cdff32effdd8b969aa",
+      "upstream_sha256": "17908f812c1abdd4e5fc81644125a08eb9fd82da7aa831cdff32effdd8b969aa",
+      "matches": true
+    },
+    {
+      "path": "vllm/model_executor/layers/quantization/oscar/config.py",
+      "url": "https://raw.githubusercontent.com/vllm-project/vllm/57286d5d2cb08c3dcd8c17bb59e132d6985e6796/vllm/model_executor/layers/quantization/oscar/config.py",
+      "local_sha256": "97429db182eb3221898e7d46ab592af3fa303326d686294e48c900e2a954e349",
+      "upstream_sha256": "97429db182eb3221898e7d46ab592af3fa303326d686294e48c900e2a954e349",
+      "matches": true
+    },
+    {
+      "path": "vllm/model_executor/layers/quantization/oscar/mla_latent.py",
+      "url": "https://raw.githubusercontent.com/vllm-project/vllm/57286d5d2cb08c3dcd8c17bb59e132d6985e6796/vllm/model_executor/layers/quantization/oscar/mla_latent.py",
+      "local_sha256": "2b1a90e556b2d39e4e438587e507b67c89411221149e44aeeb4936ca7c6e3854",
+      "upstream_sha256": "2b1a90e556b2d39e4e438587e507b67c89411221149e44aeeb4936ca7c6e3854",
+      "matches": true
+    },
+    {
+      "path": "vllm/model_executor/layers/quantization/oscar/rotation.py",
+      "url": "https://raw.githubusercontent.com/vllm-project/vllm/57286d5d2cb08c3dcd8c17bb59e132d6985e6796/vllm/model_executor/layers/quantization/oscar/rotation.py",
+      "local_sha256": "f8838a79dd242ac77bfbfa0d4180db80f5cf529dbadd2c65bc83073307e57d11",
+      "upstream_sha256": "f8838a79dd242ac77bfbfa0d4180db80f5cf529dbadd2c65bc83073307e57d11",
+      "matches": true
+    },
+    {
+      "path": "vllm/v1/attention/backends/oscar_attn.py",
+      "url": "https://raw.githubusercontent.com/vllm-project/vllm/57286d5d2cb08c3dcd8c17bb59e132d6985e6796/vllm/v1/attention/backends/oscar_attn.py",
+      "local_sha256": "88f3352fc8f931dd535489f1a46698501927a8ca296e5a5187d2a9122748eda8",
+      "upstream_sha256": "88f3352fc8f931dd535489f1a46698501927a8ca296e5a5187d2a9122748eda8",
+      "matches": true
+    },
+    {
+      "path": "vllm/v1/attention/ops/triton_oscar_decode.py",
+      "url": "https://raw.githubusercontent.com/vllm-project/vllm/57286d5d2cb08c3dcd8c17bb59e132d6985e6796/vllm/v1/attention/ops/triton_oscar_decode.py",
+      "local_sha256": "e9dee83ed95284ae1bf8abdb8a3db3baf6fc4d6b0cdfe7a14ed8e57b09292b54",
+      "upstream_sha256": "e9dee83ed95284ae1bf8abdb8a3db3baf6fc4d6b0cdfe7a14ed8e57b09292b54",
+      "matches": true
+    },
+    {
+      "path": "vllm/v1/attention/ops/triton_oscar_mla.py",
+      "url": "https://raw.githubusercontent.com/vllm-project/vllm/57286d5d2cb08c3dcd8c17bb59e132d6985e6796/vllm/v1/attention/ops/triton_oscar_mla.py",
+      "local_sha256": "6384ba0b4ae1c8f10bf8c6b73acaccf71fa19e1e481671c25fd7f1d36711e458",
+      "upstream_sha256": "6384ba0b4ae1c8f10bf8c6b73acaccf71fa19e1e481671c25fd7f1d36711e458",
+      "matches": true
+    },
+    {
+      "path": "vllm/v1/attention/ops/triton_oscar_store.py",
+      "url": "https://raw.githubusercontent.com/vllm-project/vllm/57286d5d2cb08c3dcd8c17bb59e132d6985e6796/vllm/v1/attention/ops/triton_oscar_store.py",
+      "local_sha256": "cdb56a9bc49564aaaba848fd1b37036143016d8d3c53a67ddc00c69ee762f73f",
+      "upstream_sha256": "cdb56a9bc49564aaaba848fd1b37036143016d8d3c53a67ddc00c69ee762f73f",
+      "matches": true
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "checked_at": "2026-09-14T10:13:28.834796+00:00",
+  "status": "unchanged",
+  "trees": {
+    "vllm": {
+      "unchanged": true,
+      "file_count": 5440,
+      "inventory_sha256": "04c8a053d010f3ecb142f893f04a9e88ed4d51b255ba9893628db39144e7b73c"
+    },
+    "vllm-ascend": {
+      "unchanged": true,
+      "file_count": 3039,
+      "inventory_sha256": "fe8155ccc826b04dff191954de95766bab18d43d53f67107268d3629b263b62b"
+    },
+    "oscar-vllm-pr46774": {
+      "unchanged": true,
+      "file_count": 11,
+      "inventory_sha256": "8a309349c30d25fdf73298b2fa7441686cad0e5a7b9a7a53c97ce218288ff80b"
+    },
+    "oscar-paper": {
+      "unchanged": true,
+      "file_count": 4493,
+      "inventory_sha256": "dc856e3279cead7f50df0157d52d7bd92c7477122e51c4256e3442e622ca95b1"
+    }
+  },
+  "checked_at_after_disconnect_recovery": "2026-09-14T11:48:26.327574+00:00",
+  "note": "Re-verified after the drafter/prefix/error-propagation/dequant implementation session; all four reference trees byte-identical to the pre-implementation inventory."
+}

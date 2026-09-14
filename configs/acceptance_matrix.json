@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "input_token_counts": [63, 64, 65, 319, 320, 321, 16384, 32768, 50000],
+  "maximum_configured_context": 262144,
+  "max_num_seqs": 128,
+  "mtp_draft_tokens": 3,
+  "verify_query_lengths": [1, 2, 3, 4],
+  "mtp_outcomes": ["all_rejected", "accept_1", "accept_2", "accept_3"],
+  "cache_lifecycles": ["new", "chunked", "prefix_hit", "prefix_miss", "shared_page", "finished", "cancelled", "reused_id", "preempted", "resumed"],
+  "graph_checks": ["capture_entered", "capture_returned", "real_request_replayed", "updated_lengths_replayed", "updated_blocks_replayed"],
+  "reference_tolerances": {"store_atol": 0.002, "store_rtol": 0.002, "attention_atol": 0.005, "attention_rtol": 0.005, "window_relative_l2": 0.02},
+  "model_quality_threshold": null,
+  "model_quality_threshold_status": "must be fixed before tuning; source PR does not establish a Qwen3.5-27B threshold",
+  "performance_repetitions": 5,
+  "warmup_repetitions": 2,
+  "performance_noise_policy": "record every repetition and spread; no silent tolerance or averaged pass across cases",
+  "npu_status": "not_run"
+}

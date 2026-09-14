@@ -1,0 +1,9 @@
+{
+  "phase": "target-environment",
+  "status": "failed",
+  "npu_acceptance": "not_run",
+  "graph_capture": "not_run",
+  "graph_replay": "not_run",
+  "log_directory": "reports/local_preflight",
+  "error": "Ascend execution requires the target Linux environment; missing vllm; missing vllm-ascend; missing torch; missing torch-npu; model directory missing; missing executable npu-smi; missing executable cmake"
+}

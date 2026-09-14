@@ -1,0 +1,13 @@
+{
+  "phase": "host-contracts",
+  "status": "host_checks_passed_with_skips",
+  "npu_acceptance": "not_run",
+  "graph_capture": "not_run",
+  "graph_replay": "not_run",
+  "log_directory": "/tmp/oscar_host_checks_194550",
+  "tests": {
+    "collected": 86,
+    "skipped": 7,
+    "passed": 79
+  }
+}
