@@ -30,7 +30,13 @@ LINE_LIMIT = 600
 
 
 def _clip(line: str) -> str:
-    return line if len(line) <= LINE_LIMIT else line[:LINE_LIMIT] + " ...<clipped>"
+    # Compiler/linker command lines can exceed a thousand characters and push
+    # the actual diagnostic to the end of the line; keep a head sample plus the
+    # full tail so a pasted report always contains the error text itself.
+    if len(line) <= LINE_LIMIT:
+        return line
+    head, tail = 250, 500
+    return f"{line[:head]} ...<middle clipped>... {line[-tail:]}"
 
 
 def print_failure_details(logdir: Path, phase_name: str, *,
@@ -144,7 +150,7 @@ def main() -> int:
         phase("configure", ["cmake", "-S", str(ROOT / "csrc"), "-B", str(build),
                             f"-DASCEND_HOME_PATH={args.cann}", f"-DSOC_VERSION={args.soc_version}",
                             f"-DPython3_EXECUTABLE={sys.executable}"], 180)
-        phase("build", ["cmake", "--build", str(build), "--parallel", "4"], 1200)
+        phase("build", ["cmake", "--build", str(build), "--parallel", "4", "--clean-first"], 2400)
         library = build / "liboscar_ascend_ops.so"
         if not library.is_file():
             raise RuntimeError(f"expected fresh operator library missing: {library}")
