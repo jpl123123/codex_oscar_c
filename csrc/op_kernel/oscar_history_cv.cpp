@@ -279,22 +279,13 @@ extern "C" __global__ __aicore__ void oscar_history_reduce_kernel(GM_ADDR ws,GM_
         Save(out[int64_t(row)*plan.d],b,plan.d);
     }
 }
-// The framework generates host triple-chevron stubs that receive struct
-// parameters by pointer (aclrtlaunch_triple_chevrons_func.h), while device
-// passes of this TU type-check the by-value call against the kernel. Both
-// modes must compile; a wrong assumption here fails loudly at build time.
-#if defined(__CCE_AICORE__)
-#define OSCAR_LAUNCH_PLAN plan
-#else
-#define OSCAR_LAUNCH_PLAN &plan
-#endif
 extern "C" void oscar_history_launch(void* stream,const void* q,const void* cache,const void* bt,const void* qsl,
   const void* hs,const void* he,const void* qpos,void* out,void* lse,void* ws,HistoryPlan plan) {
-    oscar_history_cv_kernel<<<plan.cores,nullptr,stream>>>((GM_ADDR)q,(GM_ADDR)cache,(GM_ADDR)bt,(GM_ADDR)qsl,(GM_ADDR)hs,(GM_ADDR)he,(GM_ADDR)qpos,(GM_ADDR)ws,OSCAR_LAUNCH_PLAN);
-    oscar_history_reduce_kernel<<<plan.cores*2,nullptr,stream>>>((GM_ADDR)ws,(GM_ADDR)out,(GM_ADDR)lse,(GM_ADDR)qsl,OSCAR_LAUNCH_PLAN);
+    oscar_history_cv_kernel<<<plan.cores,nullptr,stream>>>((GM_ADDR)q,(GM_ADDR)cache,(GM_ADDR)bt,(GM_ADDR)qsl,(GM_ADDR)hs,(GM_ADDR)he,(GM_ADDR)qpos,(GM_ADDR)ws,OSCAR_LAUNCH_ARG(plan));
+    oscar_history_reduce_kernel<<<plan.cores*2,nullptr,stream>>>((GM_ADDR)ws,(GM_ADDR)out,(GM_ADDR)lse,(GM_ADDR)qsl,OSCAR_LAUNCH_ARG(plan));
 }
 extern "C" void oscar_window_cv_launch(void* stream,const void* q,const void* k,const void* v,const void* wk,
  const void* wv,const void* pos,const void* map,const void* qsl,const void* qp,void* out,void* lse,void* ws,HistoryPlan plan) {
-    oscar_window_cv_kernel<<<plan.cores,nullptr,stream>>>((GM_ADDR)q,(GM_ADDR)k,(GM_ADDR)v,(GM_ADDR)wk,(GM_ADDR)wv,(GM_ADDR)pos,(GM_ADDR)map,(GM_ADDR)qsl,(GM_ADDR)qp,(GM_ADDR)ws,OSCAR_LAUNCH_PLAN);
-    oscar_history_reduce_kernel<<<plan.cores*2,nullptr,stream>>>((GM_ADDR)ws,(GM_ADDR)out,(GM_ADDR)lse,(GM_ADDR)qsl,OSCAR_LAUNCH_PLAN);
+    oscar_window_cv_kernel<<<plan.cores,nullptr,stream>>>((GM_ADDR)q,(GM_ADDR)k,(GM_ADDR)v,(GM_ADDR)wk,(GM_ADDR)wv,(GM_ADDR)pos,(GM_ADDR)map,(GM_ADDR)qsl,(GM_ADDR)qp,(GM_ADDR)ws,OSCAR_LAUNCH_ARG(plan));
+    oscar_history_reduce_kernel<<<plan.cores*2,nullptr,stream>>>((GM_ADDR)ws,(GM_ADDR)out,(GM_ADDR)lse,(GM_ADDR)qsl,OSCAR_LAUNCH_ARG(plan));
 }

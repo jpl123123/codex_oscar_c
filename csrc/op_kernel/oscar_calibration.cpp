@@ -181,7 +181,7 @@ extern "C" void oscar_calib_q_moments_launch(void* stream,const void* q,void* m,
     for(int begin=0;begin<s.n;begin+=limit) {
         CalibrationShape tile=s;tile.n=s.n-begin<limit?s.n-begin:limit;
         auto ptr=(GM_ADDR)q+int64_t(begin)*s.qs0*2;
-        oscar_calib_q_moments_kernel<<<32,nullptr,stream>>>(ptr,(GM_ADDR)m,(GM_ADDR)c,tile);
+        oscar_calib_q_moments_kernel<<<32,nullptr,stream>>>(ptr,(GM_ADDR)m,(GM_ADDR)c,OSCAR_LAUNCH_ARG(tile));
     }
 }
 extern "C" void oscar_calib_q_cov_launch(void* stream,const void* m,const void* c,void* p,void* g,int h,int d,int divisor) {
@@ -193,8 +193,8 @@ extern "C" void oscar_calib_sst_moments_launch(void* stream,const void* k,const 
         CalibrationShape tile=s;tile.n=s.n-begin<limit?s.n-begin:limit;
         auto kp=(GM_ADDR)k+int64_t(begin)*s.ks0*2,vp=(GM_ADDR)v+int64_t(begin)*s.vs0*2;
         auto wp=(GM_ADDR)ws+int64_t(begin)*s.hk*4;
-        oscar_calib_weights_kernel<<<32,nullptr,stream>>>(kp,(GM_ADDR)cq,wp,tile);
-        oscar_calib_sst_moments_kernel<<<32,nullptr,stream>>>(vp,wp,(GM_ADDR)m,(GM_ADDR)den,tile);
+        oscar_calib_weights_kernel<<<32,nullptr,stream>>>(kp,(GM_ADDR)cq,wp,OSCAR_LAUNCH_ARG(tile));
+        oscar_calib_sst_moments_kernel<<<32,nullptr,stream>>>(vp,wp,(GM_ADDR)m,(GM_ADDR)den,OSCAR_LAUNCH_ARG(tile));
     }
 }
 extern "C" void oscar_calib_sst_cov_launch(void* stream,const void* m,const void* den,void* out,int h,int d,int divisor) {
@@ -205,7 +205,7 @@ extern "C" void oscar_calib_fingerprint_launch(void* stream,const void* q,const 
     for(int begin=0;begin<s.n;begin+=limit) {
         CalibrationShape tile=s;tile.n=s.n-begin<limit?s.n-begin:limit;
         auto qp=(GM_ADDR)q+int64_t(begin)*s.qs0*2,kp=(GM_ADDR)k+int64_t(begin)*s.ks0*2,vp=(GM_ADDR)v+int64_t(begin)*s.vs0*2;
-        oscar_calib_fingerprint_partial_kernel<<<32,nullptr,stream>>>(qp,kp,vp,(GM_ADDR)partial,tile,offset+begin);
+        oscar_calib_fingerprint_partial_kernel<<<32,nullptr,stream>>>(qp,kp,vp,(GM_ADDR)partial,OSCAR_LAUNCH_ARG(tile),offset+begin);
         oscar_calib_fingerprint_reduce_kernel<<<6,nullptr,stream>>>((GM_ADDR)partial,(GM_ADDR)fp);
     }
 }

@@ -5,6 +5,15 @@
 namespace oscar {
 using namespace AscendC;
 constexpr float kNegInf = -__builtin_inff();
+// Host triple-chevron stubs (aclrtlaunch_triple_chevrons_func.h) receive struct
+// kernel parameters by pointer, while device passes of the same TU type-check
+// the by-value call against the kernel declaration. A wrong assumption here
+// fails loudly at compile or link time, never silently.
+#if defined(__CCE_AICORE__)
+#define OSCAR_LAUNCH_ARG(x) x
+#else
+#define OSCAR_LAUNCH_ARG(x) &x
+#endif
 // Device-side 32-byte alignment for TPipe::InitBuffer sizes. The host-side
 // oscar::Align (512, used by tiling/workspace math) carries no __aicore__
 // attribute and cannot be called from kernel code.
