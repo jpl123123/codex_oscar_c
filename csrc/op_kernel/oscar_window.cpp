@@ -1,5 +1,5 @@
 #include "oscar_common.h"
-#include "oscar_launch.h"
+#include "../include/oscar_launch.h"
 using namespace AscendC;
 using namespace oscar;
 

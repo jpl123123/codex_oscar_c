@@ -1,5 +1,5 @@
 #include "oscar_common.h"
-#include "oscar_launch.h"
+#include "../include/oscar_launch.h"
 #include "lib/matmul_intf.h"
 
 using namespace AscendC;

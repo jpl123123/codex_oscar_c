@@ -5,7 +5,7 @@
 #include <limits>
 #include "torch_npu/csrc/core/npu/NPUStream.h"
 #include "torch_npu/csrc/framework/OpCommand.h"
-#include "oscar_launch.h"
+#include "../include/oscar_launch.h"
 #include "../op_host/tiling.h"
 
 namespace {

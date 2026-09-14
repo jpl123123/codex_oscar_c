@@ -6,7 +6,7 @@
 #include <initializer_list>
 #include "torch_npu/csrc/core/npu/NPUStream.h"
 #include "torch_npu/csrc/framework/OpCommand.h"
-#include "oscar_calibration.h"
+#include "../include/oscar_calibration.h"
 
 namespace {
 using at::Tensor;

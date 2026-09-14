@@ -1,5 +1,5 @@
 #include "oscar_common.h"
-#include "oscar_calibration.h"
+#include "../include/oscar_calibration.h"
 
 using namespace AscendC;
 using namespace oscar;

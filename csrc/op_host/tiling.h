@@ -1,5 +1,5 @@
 #pragma once
-#include "oscar_tiling.h"
+#include "../include/oscar_tiling.h"
 namespace oscar {
 int CoreCount();
 HistoryPlan MakePlan(int n, int hq, int hk, int d, int b, int pages, int block_size,

@@ -11,7 +11,7 @@
 //   matches, falling back to INT2 history for evicted rows. Lossy rows are
 //   counted; they are never reported as lossless.
 #include "oscar_common.h"
-#include "oscar_launch.h"
+#include "../include/oscar_launch.h"
 using namespace AscendC;
 using namespace oscar;
 

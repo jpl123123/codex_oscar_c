@@ -1,6 +1,6 @@
 #pragma once
 #include "kernel_operator.h"
-#include "oscar_tiling.h"
+#include "../include/oscar_tiling.h"
 
 namespace oscar {
 using namespace AscendC;
