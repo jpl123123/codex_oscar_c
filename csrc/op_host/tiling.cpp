@@ -12,7 +12,7 @@ namespace oscar {
 // The generated host stub compiles HistoryPlan with the plain system
 // compiler, so the Cube tilings cross the launch boundary as opaque byte
 // images. Both sides read the same CANN header, hence the same layout.
-static_assert(sizeof(AscendC::tiling::TCubeTiling) <= kTilingBytes,
+static_assert(sizeof(AscendC::tiling::TCubeTiling) <= HistoryPlan::kTilingBytes,
               "kTilingBytes must hold one serialized Cube tiling");
 static_assert(std::is_trivially_copyable<AscendC::tiling::TCubeTiling>::value,
               "Cube tiling must be trivially copyable to serialize as bytes");

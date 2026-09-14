@@ -3,14 +3,13 @@
 #include "kernel_tiling/kernel_tiling.h"
 
 // The AscendC <<<...>>> launch framework re-declares custom kernel parameter
-// structs in the global namespace AND copies their text verbatim into a host
-// stub compiled by the plain system compiler (auto_gen/.../host_stub.cpp).
-// Kernel parameter structs must therefore stay pure POD with no CANN types:
-// the two Cube tilings travel as opaque byte images, serialized by the host
-// tiling planner and reconstructed bit-for-bit inside the device kernel.
-inline constexpr int kTilingBytes = 512;
-
+// structs in the global namespace AND copies only the struct block verbatim
+// into a host stub compiled by the plain system compiler
+// (auto_gen/.../host_stub.cpp). Every token inside the struct must therefore
+// be self-contained: the tiling byte-image bound is a nested enum so it
+// travels with the copied text, and no CANN types may appear as members.
 struct HistoryPlan {
+    enum : int { kTilingBytes = 512 };
     int32_t n, hq, hk, d, b, pages, num_blocks, block_size, table_block_size, splits, query_tiles, cores;
     int32_t mode, window_capacity, window_rows;
     int64_t cache_block_stride;
