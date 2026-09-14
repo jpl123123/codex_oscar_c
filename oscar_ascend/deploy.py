@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 
 from .environment import collect
 from .processes import run_phase
@@ -24,7 +25,8 @@ ROOT = Path(__file__).resolve().parents[1]
 ERROR_LINE = re.compile(
     r"error:|error C\d|fatal:|FATAL|CMake Error|ninja: build stopped|"
     r"undefined reference|undefined symbol|No such file|not found|"
-    r"collect2:|ld returned|make(\[\d+\])?: \*\*\*|ASCEND_HOME_PATH", re.IGNORECASE)
+    r"No rule to make target|collect2:|ld returned|make(\[\d+\])?: \*\*\*|"
+    r"ASCEND_HOME_PATH", re.IGNORECASE)
 # Compiler command lines can exceed a thousand characters; cap what is echoed
 # so a pasted report stays readable.
 LINE_LIMIT = 600
@@ -82,6 +84,9 @@ def print_failure_details(logdir: Path, phase_name: str, *,
         print(f"{i:6d}| {_clip(line)}", flush=True)
     print(f"[oscar-ascendc] ===== end {phase_name}.log =====\n", flush=True)
     print_artifact_diagnostics(lines)
+    build_root = logdir.parent.parent / "build/ascendc"
+    print_rule_context(lines, build_root)
+    print_recent_aux_logs(build_root, logdir)
 
 
 def print_artifact_diagnostics(lines: list[str]) -> None:
@@ -106,6 +111,68 @@ def print_artifact_diagnostics(lines: list[str]) -> None:
             output = (result.stdout or result.stderr).strip()
             if output:
                 print(f"  $ {' '.join(tool)} -> {output}", flush=True)
+
+
+def print_rule_context(lines: list[str], build_root: Path) -> None:
+    """Print the make recipes referenced by failing build.make:NN markers.
+
+    Some framework custom commands redirect their own output; the rule text
+    is then the only evidence of what actually ran.
+    """
+    references: dict[str, set[int]] = {}
+    for line in lines:
+        for match in re.finditer(r"([\w./+-]*build\.make):(\d+)", line):
+            references.setdefault(match.group(1), set()).add(int(match.group(2)))
+    shown_rules = 0
+    for name, linenos in sorted(references.items()):
+        if shown_rules >= 3:
+            break
+        candidates = [Path(name)] if Path(name).is_absolute() else [build_root / name]
+        rule = next((c for c in candidates if c.is_file()), None)
+        if rule is None:
+            matches = sorted(build_root.rglob(pathlib_name(name))) if name else []
+            rule = matches[0] if matches else None
+        if rule is None:
+            print(f"[oscar-ascendc] rule file not found for {name}", flush=True)
+            continue
+        try:
+            rule_lines = rule.read_text(errors="replace").splitlines()
+        except OSError:
+            continue
+        shown_rules += 1
+        for lineno in sorted(linenos)[:3]:
+            lo, hi = max(0, lineno - 9), min(len(rule_lines), lineno + 12)
+            print(f"[oscar-ascendc] ----- {rule}:{lineno} (recipe context) -----", flush=True)
+            for i in range(lo, hi):
+                print(f"{i + 1:6d}| {_clip(rule_lines[i])}", flush=True)
+
+
+def pathlib_name(path: str) -> str:
+    return path.rsplit("/", 1)[-1]
+
+
+def print_recent_aux_logs(build_root: Path, phase_logdir: Path) -> None:
+    """Tail recently written auxiliary logs under the build tree."""
+    if not build_root.is_dir():
+        return
+    cutoff = time.time() - 45 * 60
+    reports = []
+    for candidate in list(build_root.rglob("*.log")) + list(build_root.rglob("*.txt")):
+        try:
+            stat = candidate.stat()
+        except OSError:
+            continue
+        if stat.st_mtime < cutoff or stat.st_size > 200_000:
+            continue
+        reports.append((stat.st_mtime, candidate))
+    for _, path in sorted(reports, reverse=True)[:3]:
+        try:
+            tail = path.read_text(errors="replace").splitlines()[-40:]
+        except OSError:
+            continue
+        print(f"[oscar-ascendc] ----- aux log {path} (last 40 lines) -----", flush=True)
+        for i, line in enumerate(tail, start=max(1, len(tail) - 39)):
+            print(f"{i:6d}| {_clip(line)}", flush=True)
 
 
 def main() -> int:
