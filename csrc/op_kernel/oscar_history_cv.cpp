@@ -48,6 +48,7 @@ public:
             pipe_->InitBuffer(accbuf,8*kMaxDim*4);
             pipe_->InitBuffer(pvbuf,8*kMaxDim*4);
             pipe_->InitBuffer(scratchbuf,512);
+            pipe_->InitBuffer(unpackbuf,kMaxDim*4);
         }
     }
     __aicore__ inline void SetWindow(GM_ADDR key,GM_ADDR value,GM_ADDR wk,GM_ADDR wv,GM_ADDR pos,GM_ADDR map) {
@@ -165,6 +166,9 @@ private:
             if(slot<0 || slot>=int64_t(p.num_blocks)*p.block_size) continue;
             int64_t off=(slot/p.block_size)*p.cache_block_stride+(slot%p.block_size)*p.hk*slotbytes+kh*slotbytes;
             Load(packed,cg[off],slotbytes);
+            // Scalar float->bfloat16 conversion is not supported by the device
+            // backend; stage one row in FP32 and use the vector Cast.
+            auto fs=unpackbuf.Get<float>();
             for(int side=0;side<2;++side) {
                 int b=side*region;
                 bits.SetValue(0,uint16_t(packed.GetValue(b+bytes))|(uint16_t(packed.GetValue(b+bytes+1))<<8));
@@ -173,8 +177,11 @@ private:
                 auto out=side==0?ku:vu;
                 for(int j=0;j<p.d;++j) {
                     int q=(packed.GetValue(b+j/4)>>(2*(j%4)))&3;
-                    out.SetValue(t*p.d+j,static_cast<bfloat16_t>(q*sc+z));
+                    fs.SetValue(j,q*sc+z);
                 }
+                PipeBarrier<PIPE_ALL>();
+                Cast(out[t*p.d],fs,RoundMode::CAST_RINT,p.d);
+                PipeBarrier<PIPE_ALL>();
             }
         }
         Save(tk[sub*16*p.d],ku,16*p.d); Save(tv[sub*16*p.d],vu,16*p.d);
@@ -226,7 +233,7 @@ private:
     GlobalTensor<bfloat16_t> rawk,rawv,wink,winv;
     GlobalTensor<int32_t> winpos,winmap;
     GlobalTensor<int32_t> bg,qsg,hsg,heg,qpg; GlobalTensor<float> scores,pv,partial;
-    TBuf<TPosition::VECCALC> packbuf,halfbuf,kvbuf,qbuf,scorebuf,pbuf,accbuf,pvbuf,scratchbuf;
+    TBuf<TPosition::VECCALC> packbuf,halfbuf,kvbuf,qbuf,scorebuf,pbuf,accbuf,pvbuf,scratchbuf,unpackbuf;
     float maxima[8],sums[8],alphas[8];
 };
 
