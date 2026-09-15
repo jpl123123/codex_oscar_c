@@ -340,10 +340,16 @@ def main() -> int:
             if occupied:
                 raise RuntimeError(f"native calibration requires free task devices; existing NPU processes were preserved: {occupied}")
             try:
+                # The documented host-class failure (ParallelOpenMP.cpp:64
+                # 'Invalid thread pool!') is an OpenMP runtime conflict from a
+                # system-wide LD_PRELOAD; run the calibration tree with the
+                # inherited preload cleared. Nothing is added, and the user's
+                # interactive shell environment is untouched.
                 cleanup = phase("native-calibration", [sys.executable, "-m", "oscar_ascend.calibrate",
                                  "--request", str(request_path), "--output", str(candidate)],
                                 profile["phase_timeout_seconds"],
-                                extra_env={"OSCAR_ASCEND_ENABLED": "0", "PYTHONUNBUFFERED": "1"})
+                                extra_env={"OSCAR_ASCEND_ENABLED": "0", "PYTHONUNBUFFERED": "1",
+                                           "LD_PRELOAD": ""})
             finally:
                 record = logdir / "native-calibration.process.json"
                 if record.is_file():

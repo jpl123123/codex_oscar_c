@@ -16,6 +16,24 @@ from .runtime import OSCAR_REFERENCE_COMMIT, ROTATION_OBJECTIVES
 from .service_config import PHYSICAL_DEVICES, target_argv
 
 
+def print_environment_fingerprint() -> None:
+    """Record the dynamic-library/thread-pool environment before torch starts.
+
+    The historical failure mode on this host class (ParallelOpenMP.cpp:64
+    'Invalid thread pool!') is an OpenMP runtime conflict, typically caused by
+    a system-wide LD_PRELOAD mixing runtimes with torch's bundled one. The
+    fingerprint lands in the phase log so a failure paste shows exactly which
+    OpenMP libraries the process tree loaded.
+    """
+    keys = ("LD_PRELOAD", "LD_LIBRARY_PATH", "LD_AUDIT",
+            "OMP_NUM_THREADS", "OMP_DYNAMIC", "OMP_MAX_ACTIVE_LEVELS",
+            "OMP_THREAD_LIMIT", "OMP_SCHEDULE", "KMP_AFFINITY", "KMP_BLOCKTIME",
+            "MKL_NUM_THREADS", "ASCEND_HOME_PATH", "ASCEND_AICPU_PATH",
+            "ASCEND_RT_VISIBLE_DEVICES")
+    environment = {key: os.environ.get(key) for key in keys}
+    print(json.dumps({"calibration_environment": environment}, ensure_ascii=False), flush=True)
+
+
 def validate_request(request: dict) -> None:
     if request.get("format") != "oscar-ascend-calibration-request-v1":
         raise ValueError("unknown calibration request format")
@@ -121,12 +139,24 @@ def wait_for_worker_exit(pids: list[int], timeout: float = 60) -> None:
 
 
 def run_calibration(request: dict, output: Path) -> dict:
+    print_environment_fingerprint()
     validate_request(request)
     os.environ["ASCEND_RT_VISIBLE_DEVICES"] = PHYSICAL_DEVICES
     os.environ["OSCAR_ASCEND_ENABLED"] = "0"
     os.environ["VLLM_ALLOW_INSECURE_SERIALIZATION"] = "0"
     from vllm import LLM, SamplingParams
     import torch
+
+    # Which OpenMP runtime did this process actually bind to? The historical
+    # 'Invalid thread pool!' assert comes from mixed runtimes, so the maps of
+    # the parent (inherited by every spawned worker) are part of the evidence.
+    try:
+        mappings = [line.split()[-1] for line in Path("/proc/self/maps").read_text().splitlines()
+                    if "libgomp" in line or "libomp" in line or "libaiomp" in line]
+        print(json.dumps({"calibration_openmp_libraries": sorted(set(mappings))},
+                         ensure_ascii=False), flush=True)
+    except OSError:
+        pass
 
     llm = None
     worker_pids = []
