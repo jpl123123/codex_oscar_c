@@ -1,4 +1,9 @@
-"""Confirm owned calibration workers no longer appear in the NPU process table."""
+"""Confirm owned calibration workers exit and task devices return their HBM.
+
+Process-table release alone is not enough: a force-killed worker can leave
+device memory allocated with no owning row, and the next engine then fails
+its startup free-memory check. The helpers here parse both views of npu-smi.
+"""
 from __future__ import annotations
 
 import json
@@ -52,4 +57,68 @@ def verify_release(pids: set[int], output: Path, *, timeout: float = 60, interva
             report = {"status": "failed", "owned_pids": sorted(pids), "samples": samples}
             output.write_text(json.dumps(report, indent=2) + "\n")
             raise RuntimeError(f"owned NPU process allocations remain; report: {output}")
+        time.sleep(min(interval, max(0, deadline - time.monotonic())))
+
+
+def parse_memory_usage(output: str) -> dict[int, dict]:
+    """Per-device HBM usage from the npu-smi main table.
+
+    Rows look like "| 4  910B4  ... |  13012 / 27648 MB | ..."; the first
+    "used / total MB" field on a device row is the HBM line. Devices without
+    a recognized pattern are reported as unparsed rather than silently free.
+    """
+    usage: dict[int, dict] = {}
+    for line in output.splitlines():
+        cells = [cell.strip() for cell in line.split("|")[1:-1]]
+        if not cells or not cells[0].isdigit():
+            continue
+        device = int(cells[0])
+        match = re.search(r"(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)\s*M?B", " ".join(cells[1:]))
+        if match:
+            used, total = float(match.group(1)), float(match.group(2))
+            usage[device] = {"used_mb": used, "total_mb": total,
+                             "free_mb": total - used}
+    return usage
+
+
+def insufficient_devices(output: str, devices: tuple[int, ...], required_free_mb: float) -> list[dict]:
+    """Devices that cannot satisfy the engine's startup free-memory request."""
+    usage = parse_memory_usage(output)
+    blocked = []
+    for device in devices:
+        entry = usage.get(device)
+        if entry is None:
+            blocked.append({"npu": device, "reason": "npu-smi memory field not recognized"})
+        elif entry["free_mb"] < required_free_mb:
+            blocked.append({"npu": device, **entry, "required_free_mb": required_free_mb})
+    return blocked
+
+
+def wait_for_memory(output: Path, devices: tuple[int, ...], required_free_mb: float,
+                    *, timeout: float = 180, interval: float = 5,
+                    runner=subprocess.run) -> dict:
+    """Poll npu-smi until the task devices free the requested HBM.
+
+    Device memory can lag process exit by tens of seconds after abnormal
+    termination; report the final table instead of guessing at owners.
+    """
+    output.parent.mkdir(parents=True, exist_ok=True)
+    deadline = time.monotonic() + timeout
+    samples = []
+    while True:
+        result = runner(["npu-smi", "info"], text=True, capture_output=True, timeout=15, check=True)
+        blocked = insufficient_devices(result.stdout, devices, required_free_mb)
+        samples.append({"blocked": blocked, "stdout": result.stdout})
+        if not blocked:
+            report = {"status": "released", "devices": list(devices),
+                      "required_free_mb": required_free_mb, "samples": samples[-1]}
+            output.write_text(json.dumps(report, indent=2) + "\n")
+            return report
+        if time.monotonic() >= deadline:
+            report = {"status": "failed", "devices": list(devices),
+                      "required_free_mb": required_free_mb, "blocked": blocked,
+                      "npu_smi_stdout": result.stdout}
+            output.write_text(json.dumps(report, indent=2) + "\n")
+            raise RuntimeError(
+                f"task NPU devices still hold memory below the free threshold; report: {output}")
         time.sleep(min(interval, max(0, deadline - time.monotonic())))

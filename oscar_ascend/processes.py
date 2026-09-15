@@ -8,7 +8,7 @@ import signal
 import subprocess
 import time
 
-from .service_config import task_environment
+from .service_config import PHYSICAL_DEVICES, task_environment
 
 
 def live_group_members(pgid: int) -> list[int]:
@@ -29,7 +29,7 @@ class OwnedProcess:
         self.env = task_environment(enabled=enabled)
         self.env.update(extra_env or {})
         # Never allow a phase to broaden the physical device selection.
-        self.env["ASCEND_RT_VISIBLE_DEVICES"] = "4,5,6,7"
+        self.env["ASCEND_RT_VISIBLE_DEVICES"] = PHYSICAL_DEVICES
         self.process: subprocess.Popen | None = None
         self.handle = None
         self.observed_pids: set[int] = set()

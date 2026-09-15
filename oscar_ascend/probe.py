@@ -219,7 +219,8 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--capture", action="store_true")
     args = parser.parse_args()
-    os.environ["ASCEND_RT_VISIBLE_DEVICES"] = "4,5,6,7"
+    from .service_config import PHYSICAL_DEVICES
+    os.environ["ASCEND_RT_VISIBLE_DEVICES"] = PHYSICAL_DEVICES
     rank = int(os.environ.get("LOCAL_RANK", "0"))
     report = {"rank": rank, "status": "failed", "checks": [],
               "scope": "independent small NPU operators; not model TP4/MTP/prefix/graph acceptance",

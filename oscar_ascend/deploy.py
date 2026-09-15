@@ -15,9 +15,12 @@ import time
 
 from .environment import collect
 from .processes import run_phase
-from .service_config import target_argv
+from .service_config import PHYSICAL_DEVICES, target_argv
 
 ROOT = Path(__file__).resolve().parents[1]
+# The task owns exactly these physical devices; every phase, probe and
+# test pins them so inherited or foreign environments cannot leak in.
+PHYSICAL_DEVICE_IDS = tuple(int(part) for part in PHYSICAL_DEVICES.split(","))
 
 # Match common compiler/cmake/ninja error markers so a failed phase prints the
 # actionable lines straight to the console. The target machine may have no
@@ -259,7 +262,7 @@ def main() -> int:
     args = parser.parse_args()
     if sum((args.host_check, args.build_only, args.probe_only, args.calibrate_only)) > 1:
         parser.error("select only one mode")
-    os.environ["ASCEND_RT_VISIBLE_DEVICES"] = "4,5,6,7"
+    os.environ["ASCEND_RT_VISIBLE_DEVICES"] = PHYSICAL_DEVICES
     logdir = args.logs or ROOT / "logs" / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     logdir.mkdir(parents=True, exist_ok=True)
     status = {"phase": "configuration", "status": "running", "npu_acceptance": "not_run",
@@ -341,16 +344,31 @@ def main() -> int:
             return 0
         from .plugin import load_config
         from .prepare_rotations import ensure_rotations
-        from .npu_resources import parse_process_table, verify_release
+        from .npu_resources import (insufficient_devices, parse_process_table,
+                            verify_release, wait_for_memory)
         options = load_config()
 
         def generate_rotations(request_path, candidate, profile):
             # The calibration engine uses native BF16 FULL cache, native GDN,
             # native weight quantization and native MTP. OSCAR routing is off.
             smi = subprocess.run(["npu-smi", "info"], text=True, capture_output=True, timeout=15, check=True)
-            occupied = [row for row in parse_process_table(smi.stdout) if row["npu"] in (4, 5, 6, 7)]
+            occupied = [row for row in parse_process_table(smi.stdout)
+                 if row["npu"] in PHYSICAL_DEVICE_IDS]
             if occupied:
                 raise RuntimeError(f"native calibration requires free task devices; existing NPU processes were preserved: {occupied}")
+            # A force-killed previous run can leave HBM allocated with no
+            # owning process row; the engine would then refuse to start on
+            # its 0.9 utilization free-memory check. Poll until the task
+            # devices actually return their memory before loading a model.
+            # Unrelated owners are never terminated here.
+            physical_ids = tuple(int(part) for part in PHYSICAL_DEVICES.split(","))
+            required_mb = 0.9 * 29.49 * 1024
+            blocked = insufficient_devices(smi.stdout, physical_ids, required_mb)
+            if blocked:
+                print("[oscar-ascendc] task devices below the calibration free-memory "
+                      f"threshold; waiting for release: {blocked}", flush=True)
+                wait_for_memory(logdir / "native-calibration.hbm-wait.json",
+                                physical_ids, required_mb, timeout=300)
             try:
                 # The documented host-class failure (ParallelOpenMP.cpp:64
                 # 'Invalid thread pool!') is an OpenMP runtime conflict from a
