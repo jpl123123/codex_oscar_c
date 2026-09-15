@@ -48,11 +48,15 @@ def run_probes(ns, torch, device, *, capture=False):
         torch.npu.synchronize()
         expected = bytes([0xE4] * (dim // 4)) + struct.pack("<ee", 1, -1)
         expected += bytes([0x1B] * (dim // 4)) + struct.pack("<ee", 1, 0)
-        assert bytes(cache[5, 3, 0].cpu().tolist()) == expected, f"D={dim}: INT2 golden bytes differ"
-        untouched = cache.cpu()
-        untouched[5, 3, 0].fill_(165)
-        assert bool((untouched == 165).all()), "store overwrote an invalid/neighbor slot"
-        checks.append({"name": "pack_bytes_and_negative_slot", "head_dim": dim, "status": "passed"})
+        try:
+            assert bytes(cache[5, 3, 0].cpu().tolist()) == expected, f"D={dim}: INT2 golden bytes differ"
+            untouched = cache.cpu()
+            untouched[5, 3, 0].fill_(165)
+            assert bool((untouched == 165).all()), "store overwrote an invalid/neighbor slot"
+            checks.append({"name": "pack_bytes_and_negative_slot", "head_dim": dim, "status": "passed"})
+        except AssertionError as exc:
+            checks.append({"name": "pack_bytes_and_negative_slot", "head_dim": dim,
+                           "status": "failed", "error": str(exc)})
 
         generator = torch.Generator().manual_seed(9014 + dim)
         lengths, tables, query_heads = [23, 40], [[5, 1, 0], [7, 3, 2]], 6
@@ -96,12 +100,34 @@ def run_probes(ns, torch, device, *, capture=False):
                     reference[token] = torch.softmax(logits, dim=-1) @ value[:visible, 0]
                     ref_lse[token] = torch.logsumexp(logits, dim=-1)
             actual, actual_lse = out.cpu(), lse.cpu()
-            torch.testing.assert_close(actual, reference, atol=5e-3, rtol=5e-3)
-            torch.testing.assert_close(actual_lse, ref_lse, atol=5e-3, rtol=5e-3)
+            per_token = (actual - reference).abs().amax(dim=(1, 2))
             check = {"name": "history_attention", "head_dim": dim, "q_len": q_len,
-                     "splits": splits, "status": "passed",
+                     "splits": splits,
                      "max_abs_error": float((actual - reference).abs().max()),
+                     "per_token_max_abs_error": [round(v, 5) for v in per_token.tolist()],
+                     "lse_max_abs_error": float((actual_lse - ref_lse).abs().max()),
                      "workspace_bytes": workspace.numel()}
+            try:
+                torch.testing.assert_close(actual, reference, atol=5e-3, rtol=5e-3)
+                torch.testing.assert_close(actual_lse, ref_lse, atol=5e-3, rtol=5e-3)
+                check["status"] = "passed"
+            except AssertionError as exc:
+                # Keep going: one run must surface every failing operator with
+                # numbers, not stop at the first mismatch.
+                check["status"] = "failed"
+                check["error"] = str(exc).split("\n")[0:4]
+                worst = int((actual - reference).abs().amax(dim=(1, 2)).argmax())
+                row, head = divmod(
+                    int((actual - reference)[worst].abs().amax(dim=1).argmax()),
+                    actual.shape[2])
+                check["worst_token"] = worst
+                check["worst_sample"] = {
+                    "position": positions[worst],
+                    "actual": [round(v, 5) for v in actual[worst, head, max(0, row - 2):row + 3].tolist()],
+                    "reference": [round(v, 5) for v in reference[worst, head, max(0, row - 2):row + 3].tolist()],
+                    "actual_lse": [round(v, 5) for v in actual_lse[worst, :4].tolist()],
+                    "reference_lse": [round(v, 5) for v in ref_lse[worst, :4].tolist()],
+                }
             if capture and dim == 256 and q_len == 4:
                 graph = torch.npu.NPUGraph()
                 with torch.npu.graph(graph):
@@ -143,9 +169,14 @@ def run_eigensolver_probe(ns, torch, device):
         vectors = torch.empty(d, d, dtype=torch.float32, device=device)
         workspace = torch.empty(2, d, d, dtype=torch.float32, device=device)
         diagnostic = torch.empty(8, dtype=torch.float32, device=device)
-        ns.calib_eigh_rhp_out(matrix, rotation, eigenvalues, vectors,
-                              workspace, diagnostic, 32, 1e-6)
-        torch.npu.synchronize()
+        try:
+            ns.calib_eigh_rhp_out(matrix, rotation, eigenvalues, vectors,
+                                  workspace, diagnostic, 32, 1e-6)
+            torch.npu.synchronize()
+        except Exception as exc:
+            checks.append({"name": "eigensolver_known_spectrum", "dim": d,
+                           "status": "failed", "error": repr(exc)})
+            continue
         values = diagnostic.cpu().tolist()
         reference = torch.linalg.eigvalsh(matrix.cpu())
         actual = eigenvalues.cpu()
@@ -157,7 +188,9 @@ def run_eigensolver_probe(ns, torch, device):
         residual = float((matrix.cpu() @ vectors_cpu
                           - vectors_cpu * eigenvalues.cpu().unsqueeze(0)).abs().max())
         checks.append({"name": "eigensolver_known_spectrum", "dim": d,
-                       "status": "reported",
+                       "status": "failed" if (values[0] != 1 or values[7] != 0
+                                              or eigen_error > 1e-2
+                                              or orthogonality > 1e-3) else "passed",
                        "diagnostic": values, "eigenvalue_max_abs_error": eigen_error,
                        "rotation_orthogonality": orthogonality,
                        "eigenpair_residual": residual})
@@ -276,6 +309,12 @@ def main():
         report["checks"] += run_prefix_probes(namespace, torch, f"npu:{rank}")
         report["checks"] += run_eigensolver_probe(namespace, torch, f"npu:{rank}")
         torch.npu.synchronize()
+        failures = [c for c in report["checks"] if c.get("status") == "failed"]
+        if failures:
+            report["status"] = "failed"
+            report["error"] = "; ".join(f"{c.get('name')}({c.get('dim', c.get('head_dim', ''))})"
+                                        for c in failures)
+            return 1
         report["status"] = "passed"
         return 0
     except Exception as exc:
