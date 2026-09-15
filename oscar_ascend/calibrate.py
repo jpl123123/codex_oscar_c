@@ -157,6 +157,12 @@ def run_calibration(request: dict, output: Path) -> dict:
                          ensure_ascii=False), flush=True)
     except OSError:
         pass
+    try:
+        print(json.dumps({"calibration_torch_parallel_info": torch.__config__.parallel_info(),
+                          "calibration_torch_num_threads": torch.get_num_threads()},
+                         ensure_ascii=False), flush=True)
+    except Exception:
+        pass
 
     llm = None
     worker_pids = []

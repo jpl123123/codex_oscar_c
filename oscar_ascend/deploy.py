@@ -348,8 +348,15 @@ def main() -> int:
                 cleanup = phase("native-calibration", [sys.executable, "-m", "oscar_ascend.calibrate",
                                  "--request", str(request_path), "--output", str(candidate)],
                                 profile["phase_timeout_seconds"],
-                                extra_env={"OSCAR_ASCEND_ENABLED": "0", "PYTHONUNBUFFERED": "1",
-                                           "LD_PRELOAD": ""})
+                                # Evidence from the environment fingerprint: the inherited
+                # shell pins OMP_NUM_THREADS=1, and this torch is a +cpu
+                # aarch64 build whose ATen thread pool is never created for a
+                # single thread, so the autograd worker thread hits
+                # ParallelOpenMP.cpp:64 'Invalid thread pool!'. Give the
+                # calibration subprocess a normal host thread count; the NPU
+                # still performs all calibration math.
+                extra_env={"OSCAR_ASCEND_ENABLED": "0", "PYTHONUNBUFFERED": "1",
+                                           "LD_PRELOAD": "", "OMP_NUM_THREADS": "8"})
             finally:
                 record = logdir / "native-calibration.process.json"
                 if record.is_file():
