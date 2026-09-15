@@ -126,6 +126,44 @@ def run_probes(ns, torch, device, *, capture=False):
     return checks
 
 
+def run_eigensolver_probe(ns, torch, device):
+    """Solve matrices with known spectra and compare against torch.linalg.eigh.
+
+    Runs in seconds on one rank; used to bisect the AscendC Jacobi solver
+    without paying for a full model calibration.
+    """
+    checks = []
+    for d in (8, 64, 128):
+        generator = torch.Generator().manual_seed(4400 + d)
+        base = torch.randn(d, d, generator=generator)
+        matrix = (base + base.T) / 2 + d * torch.eye(d)
+        matrix = matrix.to(device=device, dtype=torch.float32)
+        rotation = torch.empty(d, d, dtype=torch.float32, device=device)
+        eigenvalues = torch.empty(d, dtype=torch.float32, device=device)
+        vectors = torch.empty(d, d, dtype=torch.float32, device=device)
+        workspace = torch.empty(2, d, d, dtype=torch.float32, device=device)
+        diagnostic = torch.empty(8, dtype=torch.float32, device=device)
+        ns.calib_eigh_rhp_out(matrix, rotation, eigenvalues, vectors,
+                              workspace, diagnostic, 32, 1e-6)
+        torch.npu.synchronize()
+        values = diagnostic.cpu().tolist()
+        reference = torch.linalg.eigvalsh(matrix.cpu())
+        actual = eigenvalues.cpu()
+        eigen_error = float((actual.sort().values - reference.sort().values).abs().max())
+        orthogonality = float((rotation.cpu().T @ rotation.cpu()
+                               - torch.eye(d)).abs().max())
+        # reconstruct A @ v - lambda v through the unsorted vectors
+        vectors_cpu = vectors.cpu()
+        residual = float((matrix.cpu() @ vectors_cpu
+                          - vectors_cpu * eigenvalues.cpu().unsqueeze(0)).abs().max())
+        checks.append({"name": "eigensolver_known_spectrum", "dim": d,
+                       "status": "reported",
+                       "diagnostic": values, "eigenvalue_max_abs_error": eigen_error,
+                       "rotation_orthogonality": orthogonality,
+                       "eigenpair_residual": residual})
+    return checks
+
+
 def run_prefix_probes(ns, torch, device):
     """Bounded-recovery dequantization and prefix staging/restore probes."""
     checks = []
@@ -236,6 +274,7 @@ def main():
         report["library_sha256"] = hashlib.sha256(args.library.read_bytes()).hexdigest()
         report["checks"] = run_probes(namespace, torch, f"npu:{rank}", capture=args.capture)
         report["checks"] += run_prefix_probes(namespace, torch, f"npu:{rank}")
+        report["checks"] += run_eigensolver_probe(namespace, torch, f"npu:{rank}")
         torch.npu.synchronize()
         report["status"] = "passed"
         return 0

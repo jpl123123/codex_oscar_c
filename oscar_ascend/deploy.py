@@ -342,6 +342,12 @@ def main() -> int:
         if args.build_only:
             status["status"] = "built_not_validated"
             return 0
+        # Seconds-long single-rank operator probe before any expensive phase:
+        # catches numerical regressions (store, attention, prefix restore and
+        # the calibration eigensolver against a known spectrum) early.
+        phase("operators-quick", [sys.executable, "-m", "oscar_ascend.probe",
+                                  "--library", str(library),
+                                  "--output", str(logdir / "operators-quick")], 300)
         from .plugin import load_config
         from .prepare_rotations import ensure_rotations
         from .npu_resources import (insufficient_devices, parse_process_table,
