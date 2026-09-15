@@ -348,15 +348,18 @@ def main() -> int:
                 cleanup = phase("native-calibration", [sys.executable, "-m", "oscar_ascend.calibrate",
                                  "--request", str(request_path), "--output", str(candidate)],
                                 profile["phase_timeout_seconds"],
-                                # Evidence from the environment fingerprint: the inherited
-                # shell pins OMP_NUM_THREADS=1, and this torch is a +cpu
-                # aarch64 build whose ATen thread pool is never created for a
-                # single thread, so the autograd worker thread hits
-                # ParallelOpenMP.cpp:64 'Invalid thread pool!'. Give the
-                # calibration subprocess a normal host thread count; the NPU
-                # still performs all calibration math.
+                                # Root cause of ParallelOpenMP.cpp:64 'Invalid thread pool!'
+                # (verified in torch source): caffe2::pthreadpool() repairs its
+                # static pool after fork via an unlocked release/recreate, so a
+                # forked child's autograd thread can observe a null pool. The
+                # vLLM multiproc tree defaults to fork
+                # (VLLM_WORKER_MULTIPROC_METHOD); spawning every engine and
+                # worker process removes the fork path entirely. This matches
+                # the known intermittent upstream reports (vllm-ascend #7721
+                # and #10819) on this torch_npu build family.
                 extra_env={"OSCAR_ASCEND_ENABLED": "0", "PYTHONUNBUFFERED": "1",
-                                           "LD_PRELOAD": "", "OMP_NUM_THREADS": "8"})
+                                           "LD_PRELOAD": "",
+                                           "VLLM_WORKER_MULTIPROC_METHOD": "spawn"})
             finally:
                 record = logdir / "native-calibration.process.json"
                 if record.is_file():
