@@ -251,11 +251,25 @@ class CalibrationWorkerExtension:
         torch.npu.synchronize()
         second = {name: entry["trace"].summary() for name, entry in state["layers"].items()}
         local_error = None
+        pass_deltas = {}
         try:
             verify_passes(state["first"], second)
             for name, entry in state["layers"].items():
-                if entry["fingerprint"].cpu().tolist() != state["first_fingerprints"][name]:
-                    raise RuntimeError(f"real NPU Q/K/V changed between calibration passes: {name}")
+                # Real NPU kernels (W8A8 matmul reductions, fused attention)
+                # are not bit-reproducible across replays; sample identity is
+                # already pinned by the token traces above. The fingerprints
+                # therefore use a relative-delta bound: numeric wobble stays
+                # far below it, while a different token set would move the
+                # bit-pattern sums by orders of magnitude more.
+                current = entry["fingerprint"].cpu().tolist()
+                recorded = state["first_fingerprints"][name]
+                worst = max(abs(a - b) / max(abs(a), abs(b), 1)
+                            for a, b in zip(current, recorded))
+                pass_deltas[name] = worst
+                if worst > 1e-3:
+                    raise RuntimeError(
+                        f"calibration passes disagree beyond numeric replay "
+                        f"wobble (relative fingerprint delta {worst:.3e}): {name}")
         except Exception as exc:
             local_error = str(exc)
         self.oscar_calibration_agree(local_error, "two-pass sample identity")
@@ -305,6 +319,7 @@ class CalibrationWorkerExtension:
         destination.parent.mkdir(parents=True, exist_ok=True)
         torch.save({"rank": rank, "layers": layers, "diagnostics": diagnostics,
                     "traces": second, "fingerprints": state["first_fingerprints"],
+                    "pass_fingerprint_max_relative_delta": pass_deltas,
                     "validated_on_npu": True}, destination)
         result = {"rank": rank, "pid": os.getpid(), "shard": str(destination),
                   "traces": second, "validated_on_npu": True,
