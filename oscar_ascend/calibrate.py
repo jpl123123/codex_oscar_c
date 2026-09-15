@@ -173,6 +173,7 @@ def run_calibration(request: dict, output: Path) -> dict:
               "npu_memory_release": "outer-owned-phase-must-verify", "worker_pids": worker_pids}
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".calibration-shards-", dir=output.parent) as temporary:
+        failed = False
         try:
             llm = LLM(**native_llm_kwargs(request))
             worker_reports = llm.collective_rpc("oscar_calibration_begin", timeout=timeout,
@@ -225,6 +226,9 @@ def run_calibration(request: dict, output: Path) -> dict:
             report.update(pass_token_trace_sha256=digest(pass_traces[0]),
                           prompts_used=len(selected_prompts), diagnostics=diagnostics)
         except BaseException as exc:
+            # Mark the failure so the finally block never raises its own
+            # cleanup error over this in-flight root cause.
+            failed = True
             report.update(status="failed", error=str(exc))
             raise
         finally:
@@ -249,7 +253,10 @@ def run_calibration(request: dict, output: Path) -> dict:
             report["cleanup_errors"] = cleanup_errors
             report_path = output.with_suffix(".calibration.json")
             report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
-            if cleanup_errors:
+            if cleanup_errors and not failed:
+                # Cleanup failures after a successful run are real failures;
+                # after a failed run they are recorded but must not mask the
+                # root cause that is already propagating.
                 raise RuntimeError("native calibration cleanup failed: " + "; ".join(cleanup_errors))
         if results is None or not report["worker_exit_verified"]:
             raise RuntimeError("calibration has no completed results or verified worker shutdown")

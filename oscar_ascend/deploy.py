@@ -324,6 +324,18 @@ def main() -> int:
         library = build / "liboscar_ascend_ops.so"
         if not library.is_file():
             raise RuntimeError(f"expected fresh operator library missing: {library}")
+        # liboscar_ascend_ops.so NEEDs the ascendc framework's kernel library,
+        # whose output directory is framework-chosen; dlopen resolves it only
+        # through rpath/LD_LIBRARY_PATH. Locate every produced copy once and
+        # export the directories so every engine/worker (spawned) finds them.
+        kernel_dirs = sorted({str(found.parent) for found in build.rglob("liboscar_ascend_kernels*.so")})
+        if not kernel_dirs:
+            raise RuntimeError("built tree contains no liboscar_ascend_kernels library to link against")
+        existing = os.environ.get("LD_LIBRARY_PATH", "")
+        os.environ["LD_LIBRARY_PATH"] = os.pathsep.join(
+            [d for d in kernel_dirs if d not in existing.split(os.pathsep)] +
+            ([existing] if existing else []))
+        print(f"[oscar-ascendc] kernel library directories on LD_LIBRARY_PATH: {kernel_dirs}", flush=True)
         if args.build_only:
             status["status"] = "built_not_validated"
             return 0
