@@ -86,6 +86,16 @@ def print_failure_details(logdir: Path, phase_name: str, *,
     for i, line in enumerate(lines[-tail_lines:], start=max(1, len(lines) - tail_lines + 1)):
         print(f"{i:6d}| {_clip(line)}", flush=True)
     print(f"[oscar-ascendc] ===== end {phase_name}.log =====\n", flush=True)
+    for report_path in sorted(logdir.glob(phase_name + "*.json")) + \
+            sorted((logdir / phase_name).glob("*.json")) if (logdir / phase_name).is_dir() \
+            else sorted(logdir.glob(phase_name + "*.json")):
+        try:
+            report_lines = report_path.read_text(errors="replace").splitlines()
+        except OSError:
+            continue
+        print(f"[oscar-ascendc] ----- report {report_path} -----", flush=True)
+        for i, line in enumerate(report_lines[-80:], start=max(1, len(report_lines) - 79)):
+            print(f"{i:6d}| {_clip(line)}", flush=True)
     print_artifact_diagnostics(lines)
     build_root = logdir.parent.parent / "build/ascendc"
     rules = print_rule_context(lines, build_root)

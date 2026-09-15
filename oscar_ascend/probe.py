@@ -281,6 +281,11 @@ def main():
     except Exception as exc:
         report["error"] = str(exc)
         report["traceback"] = traceback.format_exc()
+        # The target machine's operators paste stdout only; surface the full
+        # failure there in addition to the JSON report file.
+        print(report["traceback"], flush=True)
+        print(json.dumps({"rank": rank, "status": "failed",
+                          "error": str(exc)}, ensure_ascii=False), flush=True)
         return 1
     finally:
         args.output.mkdir(parents=True, exist_ok=True)
