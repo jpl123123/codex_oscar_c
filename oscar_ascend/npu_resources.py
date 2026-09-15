@@ -63,21 +63,35 @@ def verify_release(pids: set[int], output: Path, *, timeout: float = 60, interva
 def parse_memory_usage(output: str) -> dict[int, dict]:
     """Per-device HBM usage from the npu-smi main table.
 
-    Rows look like "| 4  910B4  ... |  13012 / 27648 MB | ..."; the first
-    "used / total MB" field on a device row is the HBM line. Devices without
-    a recognized pattern are reported as unparsed rather than silently free.
+    Each device spans two rows on this npu-smi generation:
+
+        | 4     910B4  | OK | 87.7  41    0    / 0     |
+        | 0           | .. | 0    0 / 0  2888 / 32768  |
+
+    The device row's first column merges the NPU id with the card name
+    ("4     910B4"); the chip row's first column is the bare chip number and
+    its last "used / total" field is HBM-Usage (the earlier field is DDR
+    Memory-Usage). Values carry no unit suffix. Devices whose rows carry no
+    recognizable pattern are reported as unparsed rather than silently free.
     """
     usage: dict[int, dict] = {}
+    current: int | None = None
     for line in output.splitlines():
         cells = [cell.strip() for cell in line.split("|")[1:-1]]
-        if not cells or not cells[0].isdigit():
+        if not cells:
             continue
-        device = int(cells[0])
-        match = re.search(r"(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)\s*M?B", " ".join(cells[1:]))
-        if match:
-            used, total = float(match.group(1)), float(match.group(2))
-            usage[device] = {"used_mb": used, "total_mb": total,
-                             "free_mb": total - used}
+        if current is None:
+            match = re.fullmatch(r"(\d+)\s+\S+", cells[0])
+            if match and len(cells) >= 2:
+                current = int(match.group(1))
+            continue
+        if cells[0].isdigit():
+            matches = re.findall(r"(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)", " ".join(cells))
+            if matches:
+                used, total = (float(value) for value in matches[-1])
+                usage[current] = {"used_mb": used, "total_mb": total,
+                                  "free_mb": total - used}
+            current = None
     return usage
 
 
@@ -100,7 +114,9 @@ def wait_for_memory(output: Path, devices: tuple[int, ...], required_free_mb: fl
     """Poll npu-smi until the task devices free the requested HBM.
 
     Device memory can lag process exit by tens of seconds after abnormal
-    termination; report the final table instead of guessing at owners.
+    termination. A table we cannot parse is a diagnostics failure, not an
+    occupied device: it aborts immediately with the npu-smi excerpt instead
+    of waiting out the timeout.
     """
     output.parent.mkdir(parents=True, exist_ok=True)
     deadline = time.monotonic() + timeout
@@ -108,12 +124,20 @@ def wait_for_memory(output: Path, devices: tuple[int, ...], required_free_mb: fl
     while True:
         result = runner(["npu-smi", "info"], text=True, capture_output=True, timeout=15, check=True)
         blocked = insufficient_devices(result.stdout, devices, required_free_mb)
-        samples.append({"blocked": blocked, "stdout": result.stdout})
+        samples.append({"blocked": blocked})
         if not blocked:
             report = {"status": "released", "devices": list(devices),
                       "required_free_mb": required_free_mb, "samples": samples[-1]}
             output.write_text(json.dumps(report, indent=2) + "\n")
             return report
+        if all(entry.get("reason") for entry in blocked):
+            report = {"status": "unparsed", "devices": list(devices),
+                      "required_free_mb": required_free_mb, "blocked": blocked,
+                      "npu_smi_stdout": result.stdout}
+            output.write_text(json.dumps(report, indent=2) + "\n")
+            raise RuntimeError(
+                "npu-smi HBM fields could not be parsed; refusing to guess "
+                f"whether the task devices are free; report: {output}")
         if time.monotonic() >= deadline:
             report = {"status": "failed", "devices": list(devices),
                       "required_free_mb": required_free_mb, "blocked": blocked,
