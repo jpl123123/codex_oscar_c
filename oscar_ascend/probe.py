@@ -116,6 +116,45 @@ def run_probes(ns, torch, device, *, capture=False):
                 # numbers, not stop at the first mismatch.
                 check["status"] = "failed"
                 check["error"] = str(exc).split("\n")[0:4]
+                # Bisect the failure in the same run: (a) splits=1 isolates
+                # the split-partial merge path; (b) per-request single-batch
+                # calls isolate request-dependent addressing (block tables,
+                # lengths). Each variant reuses the same stored cache.
+                bisect = {}
+                try:
+                    out1 = torch.empty_like(out); lse1 = torch.empty_like(lse)
+                    ns.history_attention_out(q, cache, bt, qsl, hs, he, qpos,
+                                              out1, lse1, workspace, scale, 1, q_len)
+                    torch.npu.synchronize()
+                    bisect["splits1_max_abs_error"] = float(
+                        (out1.cpu() - reference).abs().max())
+                except Exception as exc1:
+                    bisect["splits1_error"] = repr(exc1)
+                for req_index, (length, table) in enumerate(zip(lengths, tables)):
+                    try:
+                        qsl1 = torch.tensor([0, q_len], dtype=torch.int32, device=device)
+                        hs1 = torch.zeros(1, dtype=torch.int32, device=device)
+                        he1 = torch.tensor([length], dtype=torch.int32, device=device)
+                        positions1 = list(range(length - q_len, length))
+                        qpos1 = torch.tensor(positions1, dtype=torch.int32, device=device)
+                        bt1 = torch.tensor([table], dtype=torch.int32, device=device)
+                        mask = [req_index * q_len + row for row in range(q_len)]
+                        qr = q[mask]
+                        outr = torch.empty((q_len, query_heads, dim),
+                                           dtype=torch.float32, device=device)
+                        lser = torch.empty((q_len, query_heads),
+                                           dtype=torch.float32, device=device)
+                        ns.history_attention_out(qr, cache, bt1, qsl1, hs1, he1,
+                                                 qpos1, outr, lser, workspace, scale,
+                                                 splits, q_len)
+                        torch.npu.synchronize()
+                        bisect[f"request{req_index}_max_abs_error"] = float(
+                            (outr.cpu() - reference[mask]).abs().max())
+                        bisect[f"request{req_index}_lse"] = [
+                            round(v, 4) for v in lser.cpu().flatten().tolist()]
+                    except Exception as exc1:
+                        bisect[f"request{req_index}_error"] = repr(exc1)
+                check["bisect"] = bisect
                 worst = int((actual - reference).abs().amax(dim=(1, 2)).argmax())
                 row, head = divmod(
                     int((actual - reference)[worst].abs().amax(dim=1).argmax()),
@@ -242,7 +281,9 @@ def run_prefix_probes(ns, torch, device):
                         slots, staging_k, staging_v, owner, sink, recent)
     torch.npu.synchronize()
     staged = int((owner != -1).sum().item())
-    assert staged == sink + recent, f"staging kept {staged} rows, expected {sink + recent}"
+    prefix_failures = []
+    if staged != sink + recent:
+        prefix_failures.append(f"staging kept {staged} rows, expected {sink + recent}")
     cap = sink + recent + 4
     window_k = torch.zeros((1, cap, heads, dim), dtype=torch.bfloat16, device=device)
     window_v = torch.zeros_like(window_k)
@@ -260,11 +301,19 @@ def run_prefix_probes(ns, torch, device):
         staging_k, staging_v, owner, cache, identity, identity, lossy,
         sink, recent, 4, bs)
     torch.npu.synchronize()
-    assert state[0].tolist() == [5, committed, 0, 0], f"restored state {state.tolist()}"
-    assert int(lossy.sum().item()) == 0, f"staged restore must be exact, lossy={lossy.sum().item()}"
-    torch.testing.assert_close(window_k[0, 0:sink], k[0:sink], atol=0, rtol=0)
-    torch.testing.assert_close(window_k[0, sink:sink + recent], k[committed - recent:committed],
-                               atol=0, rtol=0)
+    state_ok = state[0].tolist() == [5, committed, 0, 0]
+    if not state_ok:
+        prefix_failures.append(f"restored state {state.tolist()}")
+    if state_ok and int(lossy.sum().item()) != 0:
+        prefix_failures.append(f"staged restore must be exact, lossy={lossy.sum().item()}")
+    if state_ok:
+        try:
+            torch.testing.assert_close(window_k[0, 0:sink], k[0:sink], atol=0, rtol=0)
+            torch.testing.assert_close(window_k[0, sink:sink + recent], k[committed - recent:committed],
+                                       atol=0, rtol=0)
+        except AssertionError as exc:
+            prefix_failures.append("staged values differ: " + "; ".join(
+                line for line in str(exc).split("\n") if "Mismatched" in line or "Greatest" in line))
     owner.fill_(-1)
     lossy.zero_()
     ns.prefix_restore_out(
@@ -277,10 +326,15 @@ def run_prefix_probes(ns, torch, device):
         staging_k, staging_v, owner, cache, identity, identity, lossy,
         sink, recent, 4, bs)
     torch.npu.synchronize()
-    assert int(lossy.sum().item()) == sink + recent, "evicted staging must count lossy tokens"
-    assert state[0, 3].item() == 0 and state[0, 1].item() == committed
+    if state_ok:
+        if int(lossy.sum().item()) != sink + recent:
+            prefix_failures.append(f"lossy count {int(lossy.sum().item())} != {sink + recent}")
+        if not (state[0, 3].item() == 0 and state[0, 1].item() == committed):
+            prefix_failures.append(f"lossy state {state.tolist()}")
     checks.append({"name": "stage_and_prefix_restore", "head_dim": dim,
-                   "status": "passed", "lossy_rows_on_eviction": sink + recent})
+                   "status": "failed" if prefix_failures else "passed",
+                   "failures": prefix_failures,
+                   "lossy_rows_on_eviction": sink + recent})
     return checks
 
 
