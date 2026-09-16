@@ -223,10 +223,13 @@ class NpuWindowPipelineTests(unittest.TestCase):
         self.assertEqual(self.state.lossy[0].item(), 0)
         # Staged restore is exact BF16: sink and ring hold the original rows.
         torch.testing.assert_close(self.cache.sink_recent_k[0, 0:4], k0[0:4], atol=0, rtol=0)
-        torch.testing.assert_close(self.cache.sink_recent_k[0, 4:12], k0[8:16], atol=0, rtol=0)
-        torch.testing.assert_close(self.cache.sink_recent_v[0, 4:12], v0[8:16], atol=0, rtol=0)
+        # Ring order: p=12..15 wrap into slots 4..7, p=8..11 keep 8..11.
+        torch.testing.assert_close(self.cache.sink_recent_k[0, 4:12],
+                                   torch.cat((k0[12:16], k0[8:12])), atol=0, rtol=0)
+        torch.testing.assert_close(self.cache.sink_recent_v[0, 4:12],
+                                   torch.cat((v0[12:16], v0[8:12])), atol=0, rtol=0)
         self.assertEqual(self.state.positions[0, 0:4].tolist(), [0, 1, 2, 3])
-        self.assertEqual(self.state.positions[0, 4:12].tolist(), list(range(8, 16)))
+        self.assertEqual(self.state.positions[0, 4:12].tolist(), [12, 13, 14, 15, 8, 9, 10, 11])
 
         # Evicted staging falls back to bounded INT2 recovery and is counted.
         self.cache.staging_owner.fill_(-1)

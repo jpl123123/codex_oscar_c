@@ -480,7 +480,14 @@ def run_prefix_probes(ns, torch, device):
     if state_ok:
         try:
             torch.testing.assert_close(window_k[0, 0:sink], k[0:sink], atol=0, rtol=0)
-            torch.testing.assert_close(window_k[0, sink:sink + recent], k[committed - recent:committed],
+            # Recent is a ring: absolute position p lands at index
+            # sink + (p - sink) % recent, so the tail wraps into the low ring
+            # slots. Comparing against a sequential slice misreads the wrap
+            # as corruption (the earlier 99.8% "failure" was this bug).
+            ring = torch.empty(recent, heads, dim, dtype=k.dtype, device=device)
+            for i, p_abs in enumerate(range(committed - recent, committed)):
+                ring[(p_abs - sink) % recent] = k[p_abs]
+            torch.testing.assert_close(window_k[0, sink:sink + recent], ring,
                                        atol=0, rtol=0)
         except AssertionError as exc:
             prefix_failures.append("staged values differ: " + "; ".join(
