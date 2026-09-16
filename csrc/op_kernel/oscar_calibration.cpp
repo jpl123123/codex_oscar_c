@@ -8,7 +8,9 @@ namespace {
 __aicore__ inline float AbsScalar(float x) { return x<0?-x:x; }
 __aicore__ inline bool Finite(float x) { return x==x && AbsScalar(x)!=__builtin_inff(); }
 __aicore__ inline float Root(LocalTensor<float> tmp,float value) {
-    tmp.SetValue(0,value);PipeBarrier<PIPE_ALL>();Sqrt(tmp,tmp,1);PipeBarrier<PIPE_ALL>();return tmp.GetValue(0);
+    // fp32 vector Sqrt also processes 256-bit lanes; evaluating one scalar
+    // with count=1 is undefined on this backend, so widen to a full lane.
+    Duplicate(tmp,value,8);PipeBarrier<PIPE_ALL>();Sqrt(tmp,tmp,8);PipeBarrier<PIPE_ALL>();return tmp.GetValue(0);
 }
 __aicore__ inline float Sum(LocalTensor<float> src,LocalTensor<float> scratch,int d) {
     ReduceSum(scratch,src,scratch[32],d);PipeBarrier<PIPE_ALL>();return scratch.GetValue(0);

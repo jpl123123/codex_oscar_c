@@ -477,6 +477,9 @@ def main():
         report["checks"] += run_eigensolver_probe(namespace, torch, f"npu:{rank}")
         report["checks"] += run_forensics_probe(namespace, torch, f"npu:{rank}")
         torch.npu.synchronize()
+        for check in report["checks"]:
+            if check.get("status") == "failed" or "forensics" in check.get("name", ""):
+                print("CHECK " + json.dumps(check, ensure_ascii=False), flush=True)
         failures = [c for c in report["checks"] if c.get("status") == "failed"]
         if failures:
             report["status"] = "failed"

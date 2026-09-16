@@ -33,14 +33,17 @@ template<class T> __aicore__ inline void Save(GlobalTensor<T> dst, LocalTensor<T
     PipeBarrier<PIPE_ALL>();
 }
 // Vector elementary functions, including scalar state, execute on AIV.
+// AscendC fp32 vector instructions operate on 256-bit lanes; a count below
+// eight elements is undefined on this backend, so every scalar evaluation
+// widens to one full lane and reads back element zero.
 __aicore__ inline float VExp(LocalTensor<float> scratch, float x) {
-    scratch.SetValue(0, x); PipeBarrier<PIPE_ALL>();
-    Exp(scratch, scratch, 1); PipeBarrier<PIPE_ALL>();
+    Duplicate(scratch, x, 8); PipeBarrier<PIPE_ALL>();
+    Exp(scratch, scratch, 8); PipeBarrier<PIPE_ALL>();
     return scratch.GetValue(0);
 }
 __aicore__ inline float VLog(LocalTensor<float> scratch, float x) {
-    scratch.SetValue(0, x); PipeBarrier<PIPE_ALL>();
-    Ln(scratch, scratch, 1); PipeBarrier<PIPE_ALL>();
+    Duplicate(scratch, x, 8); PipeBarrier<PIPE_ALL>();
+    Ln(scratch, scratch, 8); PipeBarrier<PIPE_ALL>();
     return scratch.GetValue(0);
 }
 __aicore__ inline void RotateRow(LocalTensor<float> out, LocalTensor<float> row,
