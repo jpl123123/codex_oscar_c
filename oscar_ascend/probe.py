@@ -191,6 +191,119 @@ def run_probes(ns, torch, device, *, capture=False):
     return checks
 
 
+def run_forensics_probe(ns, torch, device):
+    """Isolate each failing operator into raw single-step data movements.
+
+    Every primitive these operators use already passes inside the dequant
+    golden test, so the defects are in operator-specific plumbing. These
+    micro-checks move known data through exactly one kernel each and print
+    the raw buffers, which identifies the corrupted stage without guessing.
+    """
+    checks = []
+
+    # 1. stage alone: copy 16 known bf16 rows through stage_window_out.
+    dim, bs, heads = 256, 16, 1
+    sink, recent = 4, 8
+    source = torch.arange(dim * bs, dtype=torch.float32).view(bs, 1, dim) % 7 - 3
+    source = source.to(torch.bfloat16).to(device)
+    staging_k = torch.zeros((2, bs, heads, dim), dtype=torch.bfloat16, device=device)
+    staging_v = torch.zeros_like(staging_k)
+    owner = torch.full((2, bs), -1, dtype=torch.int64, device=device)
+    slots = torch.arange(bs, dtype=torch.int64, device=device)
+    ns.stage_window_out(source, torch.zeros_like(source),
+                        torch.tensor([bs], dtype=torch.int32, device=device),
+                        torch.tensor([0, bs], dtype=torch.int32, device=device),
+                        slots, staging_k, staging_v, owner, sink, recent)
+    torch.npu.synchronize()
+    kept = owner[0].cpu()
+    staged_rows = staging_k[0].cpu().float()
+    reference_rows = source[:, 0].cpu().float()
+    per_row_diff = [round(float((staged_rows[i] - reference_rows[i]).abs().max()), 4)
+                    for i in range(bs)]
+    checks.append({"name": "forensics_stage_only", "owner": kept.tolist(),
+                   "per_row_max_abs_diff_after_stage": per_row_diff})
+
+    # 2. restore alone: pre-fill staging with a known pattern (bypass stage),
+    #    then run prefix_restore_out and print which window rows changed.
+    cap = sink + recent + 4
+    window_k = torch.zeros((1, cap, heads, dim), dtype=torch.bfloat16, device=device)
+    window_v = torch.zeros_like(window_k)
+    positions = torch.full((1, cap), -1, dtype=torch.int32, device=device)
+    state = torch.zeros((1, 4), dtype=torch.int64, device=device)
+    lossy = torch.zeros(1, dtype=torch.int32, device=device)
+    cache = torch.zeros((4, bs, heads, 2 * (dim // 4 + 4)), dtype=torch.uint8, device=device)
+    identity = torch.eye(dim, dtype=torch.float32, device=device)
+    staging_k.fill_(0)
+    for i in range(bs):
+        staging_k[0, i, 0] = (torch.arange(dim, dtype=torch.float32) % 5 - 2).to(torch.bfloat16).to(device)
+    owner.fill_(0)
+    committed = bs
+    ns.prefix_restore_out(
+        torch.tensor([committed + 1], dtype=torch.int32, device=device),
+        torch.tensor([0, 1], dtype=torch.int32, device=device),
+        torch.tensor([0], dtype=torch.int32, device=device),
+        torch.tensor([5], dtype=torch.int64, device=device),
+        torch.zeros((1, 4), dtype=torch.int32, device=device),
+        positions, window_k, window_v, state,
+        staging_k, staging_v, owner, cache, identity, identity, lossy,
+        sink, recent, 4, bs)
+    torch.npu.synchronize()
+    window_rows = window_k[0, :, 0].cpu().float()
+    expected_row = (torch.arange(dim) % 5 - 2).float()
+    per_row = [round(float((window_rows[i] - expected_row).abs().max()), 4)
+               if float(window_rows[i].abs().max()) > 0 else None
+               for i in range(cap)]
+    checks.append({"name": "forensics_restore_only", "state": state[0].tolist(),
+                   "lossy": int(lossy.item()),
+                   "window_rows_vs_expected": per_row,
+                   "window_row_absolute_max": [round(float(r.abs().max()), 3)
+                                               for r in window_rows]})
+
+    # 3. eigensolver on a DIAGONAL matrix (zero rotations required).
+    for d in (8,):
+        diag_matrix = torch.diag(torch.arange(1.0, d + 1.0)).to(device)
+        rotation = torch.empty(d, d, dtype=torch.float32, device=device)
+        eigenvalues = torch.empty(d, dtype=torch.float32, device=device)
+        vectors = torch.empty(d, d, dtype=torch.float32, device=device)
+        workspace = torch.empty(2, d, d, dtype=torch.float32, device=device)
+        diagnostic = torch.empty(8, dtype=torch.float32, device=device)
+        ns.calib_eigh_rhp_out(diag_matrix, rotation, eigenvalues, vectors,
+                              workspace, diagnostic, 32, 1e-6)
+        torch.npu.synchronize()
+        checks.append({"name": "forensics_eigh_diagonal", "dim": d,
+                       "diagnostic": diagnostic.cpu().tolist(),
+                       "eigenvalues": [round(v, 3) for v in eigenvalues.cpu().tolist()],
+                       "vectors_8x8": [[round(v, 3) for v in row]
+                                       for row in vectors.cpu().tolist()]})
+
+    # 4. one single 2x2 rotation: A = Q diag(3, 1) Q^T with theta = 30deg,
+    #    embedded in d=8 (remaining diagonal 5..9). Closed form answer.
+    import math
+    d = 8
+    theta = math.radians(30)
+    q2 = torch.tensor([[math.cos(theta), -math.sin(theta)],
+                       [math.sin(theta), math.cos(theta)]], dtype=torch.float32)
+    block = q2 @ torch.diag(torch.tensor([3.0, 1.0])) @ q2.T
+    matrix = torch.diag(torch.arange(5.0, 5.0 + d)).clone()
+    matrix[0:2, 0:2] = block
+    matrix = matrix.to(device)
+    rotation = torch.empty(d, d, dtype=torch.float32, device=device)
+    eigenvalues = torch.empty(d, dtype=torch.float32, device=device)
+    vectors = torch.empty(d, d, dtype=torch.float32, device=device)
+    workspace = torch.empty(2, d, d, dtype=torch.float32, device=device)
+    diagnostic = torch.empty(8, dtype=torch.float32, device=device)
+    ns.calib_eigh_rhp_out(matrix, rotation, eigenvalues, vectors,
+                          workspace, diagnostic, 32, 1e-6)
+    torch.npu.synchronize()
+    checks.append({"name": "forensics_eigh_single_rotation", "dim": d,
+                   "diagnostic": diagnostic.cpu().tolist(),
+                   "eigenvalues": [round(v, 3) for v in eigenvalues.cpu().tolist()],
+                   "expected_top2": [3.0, 1.0],
+                   "vectors_first2rows": [[round(v, 3) for v in row]
+                                          for row in vectors.cpu()[:2].tolist()]})
+    return checks
+
+
 def run_eigensolver_probe(ns, torch, device):
     """Solve matrices with known spectra and compare against torch.linalg.eigh.
 
@@ -362,6 +475,7 @@ def main():
         report["checks"] = run_probes(namespace, torch, f"npu:{rank}", capture=args.capture)
         report["checks"] += run_prefix_probes(namespace, torch, f"npu:{rank}")
         report["checks"] += run_eigensolver_probe(namespace, torch, f"npu:{rank}")
+        report["checks"] += run_forensics_probe(namespace, torch, f"npu:{rank}")
         torch.npu.synchronize()
         failures = [c for c in report["checks"] if c.get("status") == "failed"]
         if failures:
