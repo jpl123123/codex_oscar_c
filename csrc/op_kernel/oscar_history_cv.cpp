@@ -25,14 +25,15 @@ public:
         hsg.SetGlobalBuffer(reinterpret_cast<__gm__ int32_t*>(hs));
         heg.SetGlobalBuffer(reinterpret_cast<__gm__ int32_t*>(he));
         qpg.SetGlobalBuffer(reinterpret_cast<__gm__ int32_t*>(qpos));
-        // In MIX_AIC_1_2 kernels, GetBlockIdx() is the shared logical block
-        // index on the Cube side and on both Vector sub-blocks (the verified
-        // reference kernels use it directly); GetSubBlockIdx() distinguishes
-        // the two halves. Dividing by two mapped two different physical
-        // cores' vector blocks onto one core, so two core groups raced on the
-        // same task list and GM bridge.
+        // Raw <<<N>>> MIX_AIC_1_2 launches on this CANN expose each Vector
+        // sub-core as its own block index in [0, 2N): dividing by two pairs
+        // the two halves with their Cube block, and the remainder IS the
+        // half index. GetSubBlockIdx() provably returns zero on both halves
+        // here (both wrote the low bridge rows while the high rows stayed
+        // stale), and using the raw index leaves half the pairs without a
+        // Cube partner, which deadlocks the flag handshake.
         if ASCEND_IS_AIC { core=GetBlockIdx(); }
-        if ASCEND_IS_AIV { core=GetBlockIdx(); sub=GetSubBlockIdx(); }
+        if ASCEND_IS_AIV { core=GetBlockIdx()/2; sub=GetBlockIdx()%2; }
         auto* base=workspace+core*p.tile_bytes;
         uint64_t off=0;
         tq.SetGlobalBuffer(reinterpret_cast<__gm__ bfloat16_t*>(base+off)); off+=16*p.d*2;
