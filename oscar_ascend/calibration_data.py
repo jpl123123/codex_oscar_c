@@ -59,8 +59,8 @@ def load_profile(path: Path) -> dict:
         raise ValueError("calibration captures prefill with max_tokens=1, matching the paper dump recipe")
     if isinstance(profile.get("seed"), bool) or not isinstance(profile.get("seed"), int):
         raise ValueError("calibration seed must be an explicit integer")
-    if profile.get("statistics_dtype") != "float32" or profile.get("solver") != "ascendc_symmetric_jacobi":
-        raise ValueError("calibration profile does not describe the implemented NPU numerical method")
+    if profile.get("statistics_dtype") != "float32" or profile.get("solver") != "npu_torch_eigh":
+        raise ValueError("calibration profile must select the native NPU torch.linalg.eigh solver")
     if profile.get("prompt_recipe") != "oscar-gpqa-multichoice-seed0-v1":
         raise ValueError("unrecognized calibration prompt construction recipe")
     if len(profile.get("dataset_sha256", "")) != 64:

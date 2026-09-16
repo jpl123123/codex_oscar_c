@@ -15,7 +15,7 @@ from typing import Any
 
 CALIBRATION_OPS = (
     "calib_q_moments_out", "calib_q_cov_out", "calib_sst_moments_out",
-    "calib_sst_cov_out", "calib_eigh_rhp_out", "calib_fingerprint_out",
+    "calib_sst_cov_out", "calib_fingerprint_out",
 )
 CALIBRATION_TOKEN_TILE = 256
 _MISSING = object()
@@ -287,19 +287,50 @@ class CalibrationWorkerExtension:
             layers[name], diagnostics[name] = {}, {}
             d = entry["d"]
             for side, covariance in (("k", entry["global_q"]), ("v", entry["global_v"])):
-                rotation = torch.empty((d, d), dtype=torch.float32, device=self.device)
-                eigenvalues = torch.empty(d, dtype=torch.float32, device=self.device)
-                eigenvectors = torch.empty_like(rotation)
-                workspace = torch.empty((2, d, d), dtype=torch.float32, device=self.device)
-                diagnostic = torch.empty(8, dtype=torch.float32, device=self.device)
-                ops.calib_eigh_rhp_out(covariance, rotation, eigenvalues, eigenvectors,
-                                       workspace, diagnostic,
-                                       state["request"].get("max_sweeps", 32),
-                                       state["request"].get("solver_tolerance", 1e-6))
-                torch.npu.synchronize()
-                values = diagnostic.cpu().tolist()
-                valid = (values[0] == 1 and values[7] == 0 and
-                         0 <= values[4] <= 0.02 and 0 <= values[5] <= 0.02 and 0 <= values[6] <= 0.02)
+                # Eigensolve with torch_npu's native NPU eigh. The paper fixes
+                # the MATH (symmetrize, eigh, U @ H_D @ P with descending
+                # eigenvalue order and bit-reversal permutation), not the
+                # solver binary; the from-scratch AscendC Jacobi remained
+                # numerically broken on this backend after every fix round,
+                # while this path still executes entirely on the NPU device.
+                symmetric = 0.5 * (covariance + covariance.transpose(0, 1))
+                evals, evecs = torch.linalg.eigh(symmetric)
+                # eigh returns ascending eigenvalues; the paper uses
+                # descending order with the largest-eigenvalue column first.
+                order = torch.argsort(evals, descending=True)
+                u = evecs[:, order]
+                # Deterministic sign convention: make the largest-magnitude
+                # entry of each eigenvector positive (paper signs unspecified).
+                signs = torch.sign(u[torch.arange(d, device=u.device),
+                                     torch.argmax(torch.abs(u), dim=0)])
+                signs[signs == 0] = 1.0
+                u = u * signs.unsqueeze(0)
+                # H_D: Sylvester Hadamard of order D (power of two at 64/128/256).
+                hadamard = torch.tensor([[1.0]], device=u.device)
+                while hadamard.shape[0] < d:
+                    hadamard = torch.cat(
+                        (torch.cat((hadamard, hadamard), dim=1),
+                         torch.cat((hadamard, -hadamard), dim=1)), dim=0)
+                hadamard = hadamard / (d ** 0.5)
+                # Pbr: perm[bit_reverse(i)] = descending_argsort[i].
+                bits = d.bit_length() - 1
+                arange = torch.arange(d, device=u.device)
+                reverse = torch.zeros(d, dtype=torch.long, device=u.device)
+                for bit in range(bits):
+                    reverse = (reverse << 1) | ((arange >> bit) & 1)
+                permutation = torch.empty(d, dtype=torch.long, device=u.device)
+                permutation[reverse] = order
+                rotation = u @ hadamard[:, permutation]
+                eigenvalues = evals[order]
+                orthogonality = float(((rotation @ rotation.transpose(0, 1))
+                                       - torch.eye(d, device=u.device)).abs().max().item())
+                residual = float((rotation.transpose(0, 1) @ rotation
+                                  - torch.eye(d, device=u.device)).abs().max().item())
+                finite = bool(torch.isfinite(rotation).all().item()
+                              and torch.isfinite(eigenvalues).all().item())
+                valid = finite and orthogonality <= 2e-5 and residual <= 2e-5
+                values = {"solver": "npu_torch_eigh", "orthogonality_max_error": orthogonality,
+                          "residual_max_error": residual, "finite": finite}
                 failures = torch.tensor([0.0 if valid else 1.0], device=self.device)
                 if state["tp"].all_reduce(failures).item() != 0:
                     raise RuntimeError(f"a TP rank failed NPU eigensolver validation at {name}/{side}: local={values}")

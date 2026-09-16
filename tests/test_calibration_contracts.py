@@ -35,7 +35,7 @@ def request_fixture(directory):
         "model_config_sha256": hashlib.sha256((model / "config.json").read_bytes()).hexdigest(),
         "library_path": str(library), "library_sha256": hashlib.sha256(library.read_bytes()).hexdigest(),
         "corpus_sha256": "2" * 64, "target_service_config": str(service_path),
-        "target_argv_sha256": digest(service["argv"]), "calibration_profile": {"solver": "ascendc_symmetric_jacobi"},
+        "target_argv_sha256": digest(service["argv"]), "calibration_profile": {"solver": "npu_torch_eigh"},
     }
 
 

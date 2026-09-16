@@ -267,7 +267,7 @@ def run_calibration(request: dict, output: Path) -> dict:
         )}
         artifact.update(format="oscar-ascend-rotations-v1", ranks=results,
                         calibration={"validated_on_npu": True, "diagnostics": report["diagnostics"],
-                                     "solver": "ascendc_symmetric_jacobi", "statistics_dtype": "float32",
+                                     "solver": "npu_torch_eigh", "statistics_dtype": "float32",
                                      "max_sweeps": request.get("max_sweeps", 32),
                                      "tolerance": request.get("solver_tolerance", 1e-6),
                                      "pass_token_trace_sha256": report["pass_token_trace_sha256"],

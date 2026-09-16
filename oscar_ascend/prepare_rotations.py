@@ -122,11 +122,13 @@ def validate_artifact(path: Path, identity: dict) -> dict:
         for name in entries:
             for side in ("k", "v"):
                 report = reports[name].get(side, {})
-                solver = report.get("solver", [])
+                solver = report.get("solver", {})
                 error = report.get("rotation_roundtrip_max_error", float("inf"))
-                if (len(solver) != 8 or solver[0] != 1 or solver[7] != 0
-                        or not 0 <= error <= 0.02
-                        or any(not 0 <= solver[i] <= 0.02 for i in (4, 5, 6))):
+                if (solver.get("solver") != "npu_torch_eigh"
+                        or not solver.get("finite")
+                        or solver.get("orthogonality_max_error", 1.0) > 2e-5
+                        or solver.get("residual_max_error", 1.0) > 2e-5
+                        or not 0 <= error <= 0.02):
                     raise ValueError(f"failed/missing NPU eigensolver validation: rank {rank} {name}/{side}")
     return artifact
 

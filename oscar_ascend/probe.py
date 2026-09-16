@@ -84,6 +84,9 @@ def run_probes(ns, torch, device, *, capture=False):
             scale = dim ** -0.5
 
             def call():
+                # Start every call from a zeroed workspace so stale partial
+                # slots from earlier variants can never mask or mimic bugs.
+                workspace.zero_()
                 ns.history_attention_out(q, cache, bt, qsl, hs, he, qpos, out, lse,
                                          workspace, scale, splits, q_len)
 
@@ -130,6 +133,46 @@ def run_probes(ns, torch, device, *, capture=False):
                         (out1.cpu() - reference).abs().max())
                 except Exception as exc1:
                     bisect["splits1_error"] = repr(exc1)
+                try:
+                    # Identical requests twice: isolates multi-request task
+                    # interaction from distinct block tables/lengths.
+                    table = tables[0]
+                    length = lengths[0]
+                    bt2 = torch.tensor([table, table], dtype=torch.int32, device=device)
+                    qsl2 = torch.tensor([0, q_len, 2 * q_len], dtype=torch.int32, device=device)
+                    hs2 = torch.zeros(2, dtype=torch.int32, device=device)
+                    he2 = torch.tensor([length, length], dtype=torch.int32, device=device)
+                    qpos2 = torch.tensor(list(range(length - q_len, length)) * 2,
+                                         dtype=torch.int32, device=device)
+                    q2 = torch.cat([q[:q_len], q[:q_len]], dim=0)
+                    out2 = torch.empty((2 * q_len, query_heads, dim), dtype=torch.float32, device=device)
+                    lse2 = torch.empty((2 * q_len, query_heads), dtype=torch.float32, device=device)
+                    workspace.zero_()
+                    ns.history_attention_out(q2, cache, bt2, qsl2, hs2, he2, qpos2,
+                                             out2, lse2, workspace, scale, splits, q_len)
+                    torch.npu.synchronize()
+                    ref0 = reference[:q_len]
+                    ref1 = reference[q_len:2 * q_len]
+                    bisect["identical_batch_max_abs_error"] = [
+                        round(float((out2.cpu()[:q_len] - ref0).abs().max()), 5),
+                        round(float((out2.cpu()[q_len:] - ref1).abs().max()), 5)]
+                    bisect["identical_batch_lse_head0"] = [
+                        round(v, 4) for v in lse2.cpu()[:, 0].tolist()]
+                except Exception as exc1:
+                    bisect["identical_batch_error"] = repr(exc1)
+                # Raw partial-region LSE slots: the last n*hq*splits*(d+1)
+                # floats of the workspace; slot (row,split) LSE is the final
+                # float of each group. Unwritten/garbage slots localize the
+                # failing task decomposition directly.
+                try:
+                    group = splits * (dim + 1)
+                    tail = workspace.cpu().flatten()[-n * query_heads * group:].view(
+                        n * query_heads, splits, dim + 1)
+                    bisect["partial_lse_slots_token0"] = [
+                        [round(v, 3) for v in tail[row, :, dim].tolist()]
+                        for row in range(min(query_heads, n * query_heads))]
+                except Exception as exc1:
+                    bisect["partial_dump_error"] = repr(exc1)
                 for req_index, (length, table) in enumerate(zip(lengths, tables)):
                     try:
                         qsl1 = torch.tensor([0, q_len], dtype=torch.int32, device=device)
