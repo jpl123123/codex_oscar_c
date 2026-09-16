@@ -193,6 +193,11 @@ def run_probes(ns, torch, device, *, capture=False):
                         torch.npu.synchronize()
                         bisect[f"request{req_index}_max_abs_error"] = float(
                             (outr.cpu() - reference[mask]).abs().max())
+                        finite = torch.isfinite(ref_lse[mask])
+                        bisect[f"request{req_index}_lse_max_abs_error"] = float(
+                            (lser.cpu() - ref_lse[mask]).abs().max())
+                        bisect[f"request{req_index}_lse_invalid_heads"] = int(
+                            (~torch.isfinite(lser.cpu()) & finite).sum())
                         bisect[f"request{req_index}_lse"] = [
                             round(v, 4) for v in lser.cpu().flatten().tolist()]
                     except Exception as exc1:
