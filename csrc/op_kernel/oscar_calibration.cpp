@@ -233,7 +233,7 @@ __aicore__ inline void Coeff(GlobalTensor<float> a,int d,int p,int q,LocalTensor
 extern "C" __global__ __aicore__ void oscar_calib_jacobi_init_kernel(
  GM_ADDR covariance,GM_ADDR vectors,GM_ADDR workspace,GM_ADDR diagnostics,int d,float tolerance) {
     KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AIV_ONLY);
-    if(GetBlockIdx()!=0)return;
+    if(GetBlockIdx()!=0||GetSubBlockIdx()!=0)return;
     TPipe pipe;TBuf<TPosition::VECCALC> buf;pipe.InitBuffer(buf,2*kMaxDim*4+512);auto f=buf.Get<float>();
     GlobalTensor<float> cov,u,a,diag;
     cov.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(covariance));u.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(vectors));
@@ -307,7 +307,7 @@ extern "C" __global__ __aicore__ void oscar_calib_jacobi_left_kernel(
 }
 extern "C" __global__ __aicore__ void oscar_calib_jacobi_check_kernel(
  GM_ADDR workspace,GM_ADDR diagnostics,int d,int sweep,float tolerance) {
-    KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AIV_ONLY);if(GetBlockIdx()!=0)return;
+    KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AIV_ONLY);if(GetBlockIdx()!=0||GetSubBlockIdx()!=0)return;
     GlobalTensor<float> a,diag;a.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(workspace));
     diag.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(diagnostics));if(diag.GetValue(0)==1||diag.GetValue(7)!=0)return;
     TPipe pipe;TBuf<TPosition::VECCALC> buf;pipe.InitBuffer(buf,512);auto tmp=buf.Get<float>();
@@ -326,7 +326,7 @@ extern "C" __global__ __aicore__ void oscar_calib_jacobi_check_kernel(
 
 extern "C" __global__ __aicore__ void oscar_calib_eigen_sort_kernel(
  GM_ADDR workspace,GM_ADDR vectors,GM_ADDR eigenvalues,GM_ADDR diagnostics,int d) {
-    KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AIV_ONLY);if(GetBlockIdx()!=0)return;
+    KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AIV_ONLY);if(GetBlockIdx()!=0||GetSubBlockIdx()!=0)return;
     GlobalTensor<float> a,b,u,ev,diag;
     a.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(workspace));b.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(workspace)+d*d);
     u.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(vectors));ev.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(eigenvalues));
@@ -399,7 +399,7 @@ extern "C" __global__ __aicore__ void oscar_calib_validate_rows_kernel(
 }
 extern "C" __global__ __aicore__ void oscar_calib_validate_reduce_kernel(
  GM_ADDR workspace,GM_ADDR eigenvalues,GM_ADDR diagnostics,int d,float tolerance) {
-    KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AIV_ONLY);if(GetBlockIdx()!=0)return;
+    KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AIV_ONLY);if(GetBlockIdx()!=0||GetSubBlockIdx()!=0)return;
     GlobalTensor<float> rows,ev,diag;rows.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(workspace));
     ev.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(eigenvalues));diag.SetGlobalBuffer(reinterpret_cast<__gm__ float*>(diagnostics));if(diag.GetValue(7)!=0)return;
     TPipe pipe;TBuf<TPosition::VECCALC> buf;pipe.InitBuffer(buf,512);auto tmp=buf.Get<float>();

@@ -25,8 +25,14 @@ public:
         hsg.SetGlobalBuffer(reinterpret_cast<__gm__ int32_t*>(hs));
         heg.SetGlobalBuffer(reinterpret_cast<__gm__ int32_t*>(he));
         qpg.SetGlobalBuffer(reinterpret_cast<__gm__ int32_t*>(qpos));
+        // In MIX_AIC_1_2 kernels, GetBlockIdx() is the shared logical block
+        // index on the Cube side and on both Vector sub-blocks (the verified
+        // reference kernels use it directly); GetSubBlockIdx() distinguishes
+        // the two halves. Dividing by two mapped two different physical
+        // cores' vector blocks onto one core, so two core groups raced on the
+        // same task list and GM bridge.
         if ASCEND_IS_AIC { core=GetBlockIdx(); }
-        if ASCEND_IS_AIV { core=GetBlockIdx()/2; sub=GetSubBlockIdx(); }
+        if ASCEND_IS_AIV { core=GetBlockIdx(); sub=GetSubBlockIdx(); }
         auto* base=workspace+core*p.tile_bytes;
         uint64_t off=0;
         tq.SetGlobalBuffer(reinterpret_cast<__gm__ bfloat16_t*>(base+off)); off+=16*p.d*2;

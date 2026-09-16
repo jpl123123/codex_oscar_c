@@ -274,7 +274,13 @@ def run_forensics_probe(ns, torch, device):
                        "diagnostic": diagnostic.cpu().tolist(),
                        "eigenvalues": [round(v, 3) for v in eigenvalues.cpu().tolist()],
                        "vectors_8x8": [[round(v, 3) for v in row]
-                                       for row in vectors.cpu().tolist()]})
+                                       for row in vectors.cpu().tolist()],
+                       "workspace_A": [[round(v, 3) for v in row]
+                                       for row in workspace[0].cpu().tolist()],
+                       "workspace_B": [[round(v, 3) for v in row]
+                                       for row in workspace[1].cpu().tolist()],
+                       "rotation": [[round(v, 3) for v in row]
+                                    for row in rotation.cpu().tolist()]})
 
     # 4. one single 2x2 rotation: A = Q diag(3, 1) Q^T with theta = 30deg,
     #    embedded in d=8 (remaining diagonal 5..9). Closed form answer.
@@ -300,7 +306,11 @@ def run_forensics_probe(ns, torch, device):
                    "eigenvalues": [round(v, 3) for v in eigenvalues.cpu().tolist()],
                    "expected_top2": [3.0, 1.0],
                    "vectors_first2rows": [[round(v, 3) for v in row]
-                                          for row in vectors.cpu()[:2].tolist()]})
+                                          for row in vectors.cpu()[:2].tolist()],
+                   "workspace_A_first4": [[round(v, 3) for v in row]
+                                          for row in workspace[0].cpu()[:4].tolist()],
+                   "workspace_B_first4": [[round(v, 3) for v in row]
+                                          for row in workspace[1].cpu()[:4].tolist()]})
     return checks
 
 
